@@ -1,17 +1,12 @@
 #pragma once
-
-#include "platform/IFeatureExtractor.hpp"
-#include "types/ImageFrame.hpp"
-#include "types/FeatureFrame.hpp"
+#include "types.hpp"
+#include "platform/linux/FeatureExtractor.hpp"  // Include directly
 
 class FeatureDetector {
 public:
-    // Constructor with dependency injection
-    FeatureDetector(IFeatureExtractor* extractor);
-
-    // Runs feature detection using the underlying extractor
+    FeatureDetector();  // constructor sets up the extractor
     bool detect(const ImageFrame& img, FeatureFrame& features);
 
 private:
-    IFeatureExtractor* extractor_;
+    FeatureExtractor extractor_;  // embedded, no dynamic allocation
 };
