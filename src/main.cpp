@@ -1,37 +1,52 @@
 #include "vbn/FeatureDetector.hpp"
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include "os/rtos.hpp"
+
+cv::Mat img;
+ImageFrame input;
+FeatureFrame output;
+
+// Define the RTOS task object
+Rtos::Task FeatureDetectionTask;
+
+// === Feature Detection Task Loop ===
+void FeatureDetection(void* arg) {
+    FeatureDetector detector;
+
+    while (true) {
+        output.keypoints.clear();
+        bool success = detector.detect(input, output);
+
+        if (success) {
+            std::cout << "[FeatureDetection] Success: "
+                      << output.keypoints.size() << " keypoints\n";
+
+        } else {
+            std::cout << "[FeatureDetection] No features detected\n";
+        }
+
+        Rtos::SleepMs(200);  // Run task at 5 Hz
+    }
+}
 
 int main() {
-    cv::Mat img = cv::imread("../tools/simulated-image.png", cv::IMREAD_GRAYSCALE);
+    // Load the image
+    img = cv::imread("../tools/simulated-image.png", cv::IMREAD_GRAYSCALE);
     if (img.empty()) {
         std::cerr << "Could not load image\n";
         return -1;
     }
 
-    ImageFrame input = {img.data, img.cols, img.rows};
-    FeatureFrame output;
+    input = {img.data, img.cols, img.rows};
 
-    FeatureDetector detector;
-    if (detector.detect(input, output)) {
-        std::cout << "Detected " << output.keypoints.size() << " features\n";
-    } else {
-        std::cout << "No features detected\n";
+    // Create feature detection task
+    FeatureDetectionTask.Create("FeatureDetection", FeatureDetection, nullptr);
+
+    // Keep main alive (could add heartbeat log here)
+    while (true) {
+        Rtos::SleepMs(10000);
     }
-
-    // Draw darker circles to mark LEDs in grayscale
-    for (const auto& kp : output.keypoints) {
-        cv::circle(
-            img,
-            cv::Point(kp.x, kp.y),
-            50,           // bigger radius to stand out
-            cv::Scalar(30), // dark gray for visibility
-            2
-        );
-    }
-
-    cv::imwrite("../tools/annotated.jpg", img);
-    std::cout << "Saved grayscale annotated image.\n";
 
     return 0;
 }
