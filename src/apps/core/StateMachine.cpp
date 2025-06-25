@@ -1,4 +1,4 @@
-#include "core/StateMachine.hpp"
+#include "apps/core/StateMachine.hpp"
 #include <cstdio>  // For printf (optional)
 
 // Constructor

@@ -1,4 +1,4 @@
-#include "vbn/FeatureDetector.hpp"
+#include "apps/vbn/FeatureDetector.hpp"
 
 FeatureDetector::FeatureDetector() : extractor_() {}
 
