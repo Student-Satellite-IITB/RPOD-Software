@@ -26,35 +26,34 @@ include_directories(
 # ==== Source Files ====
 # Platform-specific sources
 if(TARGET_PLATFORM STREQUAL "linux")
-    set(PLATFORM_SOURCES
-        src/platform/linux/FeatureExtractor.cpp
+    file(GLOB PLATFORM_SOURCES
+        src/platform/linux/*.cpp
         src/os/posix/rtos.cpp
     )
 elseif(TARGET_PLATFORM STREQUAL "stm32")
-    set(PLATFORM_SOURCES
-        src/platform/stm32/FeatureExtractor.cpp
+    file(GLOB PLATFORM_SOURCES
+        src/platform/stm32/*.cpp
         src/os/freertos/rtos.cpp
     )
 endif()
 
 # Common sources
-set(SOURCES
-    src/main.cpp
-    src/vbn/FeatureDetector.cpp
+file(GLOB_RECURSE SOURCES
+    # src/main.cpp
+    src/apps/*.cpp
     ${PLATFORM_SOURCES}
 )
 
 # ==== Executables ====
+# format: add_executable(<name> <main source> <source files>)
 # Main application executable
-add_executable(rpod_test_pipeline ${SOURCES})
+add_executable(rpod_test_pipeline src/main.cpp ${SOURCES})
 # Add test executables
-add_executable(vbn_featuredetection_test 
-    test/vbn_featuredetection_test.cpp 
-    src/vbn/FeatureDetector.cpp
-    src/platform/linux/FeatureExtractor.cpp
-    src/os/posix/rtos.cpp)
+add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SOURCES})
 add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_mutex_test test/rtos_mutex_test.cpp src/os/posix/rtos.cpp)
+add_executable(rtos_semaphore_test test/rtos_semaphore_test.cpp src/os/posix/rtos.cpp)
+add_executable(rtos_queue_test test/rtos_queue_test.cpp src/os/posix/rtos.cpp)
 
 # ==== Link Libraries ====
 # Platform-specific linking
@@ -65,5 +64,7 @@ if(TARGET_PLATFORM STREQUAL "linux")
     # Link RTOS test executables
     target_link_libraries(rtos_task_test pthread)
     target_link_libraries(rtos_mutex_test pthread)
+    target_link_libraries(rtos_semaphore_test pthread)
+    target_link_libraries(rtos_queue_test pthread)
 
 endif()

@@ -96,4 +96,54 @@ void Mutex::unlock() {
     pthread_mutex_unlock(&handle_->native);
 }
 
+// =======================
+// Binary Semaphore Implementation
+// =======================
+
+struct BinarySemaphore::SemaphoreHandle {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool available;  // acts like a binary flag
+};
+
+BinarySemaphore::BinarySemaphore() {
+    handle_ = new SemaphoreHandle;
+    pthread_mutex_init(&handle_->mutex, nullptr);
+    pthread_cond_init(&handle_->cond, nullptr);
+    handle_->available = false;  // starts as "not given"
+}
+
+BinarySemaphore::~BinarySemaphore() {
+    pthread_cond_destroy(&handle_->cond);
+    pthread_mutex_destroy(&handle_->mutex);
+    delete handle_;
+}
+
+void BinarySemaphore::take() {
+    pthread_mutex_lock(&handle_->mutex);
+    while (!handle_->available) {
+        pthread_cond_wait(&handle_->cond, &handle_->mutex);
+    }
+    handle_->available = false;  // consume the semaphore
+    pthread_mutex_unlock(&handle_->mutex);
+}
+
+bool BinarySemaphore::try_take() {
+    bool acquired = false;
+    pthread_mutex_lock(&handle_->mutex);
+    if (handle_->available) {
+        handle_->available = false;
+        acquired = true;
+    }
+    pthread_mutex_unlock(&handle_->mutex);
+    return acquired;
+}
+
+void BinarySemaphore::give() {
+    pthread_mutex_lock(&handle_->mutex);
+    handle_->available = true;
+    pthread_cond_signal(&handle_->cond);  // wake one waiting thread
+    pthread_mutex_unlock(&handle_->mutex);
+}
+
 }  // namespace Rtos
