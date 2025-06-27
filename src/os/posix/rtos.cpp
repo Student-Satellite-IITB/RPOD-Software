@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <unistd.h>   // for usleep
 #include <iostream>   // for std::cerr
+#include <semaphore.h>
 
 namespace Rtos {
 
@@ -146,4 +147,55 @@ void BinarySemaphore::give() {
     pthread_mutex_unlock(&handle_->mutex);
 }
 
+// =======================
+// Counting Semaphore Implementation
+// =======================
+
+struct CountingSemaphore::CountingSemHandle {
+    sem_t sem;
+    unsigned maxCount;
+};
+
+CountingSemaphore::CountingSemaphore(size_t maxCount, size_t initialCount) {
+    handle_ = new CountingSemHandle;
+    handle_->maxCount = static_cast<unsigned>(maxCount);
+
+    if (initialCount > maxCount) {
+        std::cerr << "[CountingSemaphore] Error: Initial count > max count\n";
+        initialCount = maxCount;  // clamp
+    }
+
+    if (sem_init(&handle_->sem, 0, static_cast<unsigned>(initialCount)) != 0) {
+        std::cerr << "[CountingSemaphore] sem_init failed\n";
+    }
+}
+
+CountingSemaphore::~CountingSemaphore() {
+    sem_destroy(&handle_->sem);
+    delete handle_;
+}
+
+void CountingSemaphore::take() {
+    while (sem_wait(&handle_->sem) != 0) {
+        if (errno != EINTR) {
+            std::cerr << "[CountingSemaphore] sem_wait failed\n";
+            return;
+        }
+    }
+}
+
+bool CountingSemaphore::try_take() {
+    return (sem_trywait(&handle_->sem) == 0);
+}
+
+void CountingSemaphore::give() {
+    int val;
+    sem_getvalue(&handle_->sem, &val);
+
+    if (static_cast<unsigned>(val) < handle_->maxCount) {
+        sem_post(&handle_->sem);
+    } else {
+        std::cerr << "[CountingSemaphore] give() called when full\n";
+    }
+}
 }  // namespace Rtos

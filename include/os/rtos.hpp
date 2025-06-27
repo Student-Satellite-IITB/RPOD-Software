@@ -51,6 +51,26 @@ private:
     SemaphoreHandle* handle_;
 };
 
+
+//== Counting Semaphore abstraction ==//
+class CountingSemaphore {
+public:
+    /**
+     * @param maxCount    Maximum count (e.g. queue capacity)
+     * @param initialCount  Starting count
+     */
+    CountingSemaphore(size_t maxCount, size_t initialCount);
+    ~CountingSemaphore();
+
+    void take();      // block until count>0, then --count
+    bool try_take();  // non‐blocking: if count>0 then --count, else false
+    void give();      // ++count, wake one waiter if present
+
+private:
+    struct CountingSemHandle;
+    CountingSemHandle* handle_;
+};
+
 //== Queue abstraction ==//
 // Fixed-size statically allocated queue
 //
@@ -77,31 +97,34 @@ private:
 template <typename T, size_t Capacity>
 class Queue {
 public:
-    Queue() : head(0), tail(0), count(0) {}
+    Queue() : head(0), tail(0) {}
 
-    bool send(const T& item) {
+    void send(const T& item) {
+        spaceAvailable.take();  // Wait for space
         lock.lock();
-        if (count == Capacity) {
-            lock.unlock();
-            return false;
-        }
         buffer[head] = item;
         head = (head + 1) % Capacity;
-        ++count;
+        lock.unlock();
+        dataAvailable.give();   // Signal data is available
+    }
+
+    bool try_send(const T& item) {
+        if (!spaceAvailable.try_take()) return false;
+        lock.lock();
+        buffer[head] = item;
+        head = (head + 1) % Capacity;
         lock.unlock();
         dataAvailable.give();
         return true;
     }
 
-    bool receive(T& item) {
-        dataAvailable.take();  // Wait until data is available
+    void receive(T& item) {
+        dataAvailable.take();  // Wait for data
         lock.lock();
         item = buffer[tail];
         tail = (tail + 1) % Capacity;
-        --count;
         lock.unlock();
-        // dataAvailable.give();  // Signal that data was consumed
-        return true;
+        spaceAvailable.give(); // Signal space is available
     }
 
     bool try_receive(T& item) {
@@ -109,22 +132,17 @@ public:
         lock.lock();
         item = buffer[tail];
         tail = (tail + 1) % Capacity;
-        --count;
         lock.unlock();
+        spaceAvailable.give();
         return true;
     }
 
-    // bool isFull() const {
-    //     lock.lock();
-    //     bool full = (count == Capacity);
-    //     lock.unlock();
-    //     return full;
-    // }
-
 private:
     T buffer[Capacity];
-    size_t head = 0, tail = 0, count = 0;
+    size_t head, tail;
+
     Mutex lock;
-    BinarySemaphore dataAvailable;
+    CountingSemaphore spaceAvailable{Capacity, Capacity};  // Initially full space
+    CountingSemaphore dataAvailable{Capacity, 0};          // Initially no data
 };
 } // namespace Rtos

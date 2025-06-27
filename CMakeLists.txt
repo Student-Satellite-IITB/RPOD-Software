@@ -53,6 +53,7 @@ add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SO
 add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_mutex_test test/rtos_mutex_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_semaphore_test test/rtos_semaphore_test.cpp src/os/posix/rtos.cpp)
+add_executable(rtos_countingsem_test test/rtos_countingsem_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_queue_test test/rtos_queue_test.cpp src/os/posix/rtos.cpp)
 
 # ==== Link Libraries ====
@@ -65,6 +66,7 @@ if(TARGET_PLATFORM STREQUAL "linux")
     target_link_libraries(rtos_task_test pthread)
     target_link_libraries(rtos_mutex_test pthread)
     target_link_libraries(rtos_semaphore_test pthread)
+    target_link_libraries(rtos_countingsem_test pthread)
     target_link_libraries(rtos_queue_test pthread)
 
 endif()
