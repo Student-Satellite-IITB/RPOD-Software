@@ -2,7 +2,7 @@
 #include <array>
 #include <cstdint>
 
-/// \brief 6-DOF pose estimate output by the RPOD vision system.
+/// @brief 6-DOF pose estimate output by the RPOD vision system.
 struct PoseEstimate {
     // Position in meters (in target or inertial frame depending on convention)
     float x = 0.0f;
