@@ -1,9 +1,13 @@
 #pragma once
-#include "types/FeatureFrame.hpp"
-#include "types/PoseEstimate.hpp"
+#include "types.hpp"
 
 class StaticPoseEstimator {
 public:
-    virtual bool estimate(const FeatureFrame& features, PoseEstimate& pose) = 0;
-    virtual ~StaticPoseEstimator() = default;
+    StaticPoseEstimator();
+    bool estimate(const FeatureFrame& features, PoseEstimate& pose);
+    static void Run(void* arg);  // Static method to run the pose estimation task
+
+private:
+
+    
 };

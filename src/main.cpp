@@ -1,4 +1,5 @@
 #include "apps/vbn/FeatureDetector.hpp"
+#include "apps/vbn/StaticPoseEstimator.hpp"
 #include "apps/core/CommandDataHandler.hpp"
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -55,8 +56,9 @@ void ImageCapture(void* arg) {
 
 int main() {
     // Create tasks
-    //ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
-    //FeatureDetectionTask.Create("FeatureDetection", FeatureDetector::Run, nullptr);
+    ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
+    FeatureDetectionTask.Create("FeatureDetection", FeatureDetector::Run, nullptr);
+    StaticPoseEstimationTask.Create("StaticPoseEstimation", StaticPoseEstimator::Run, nullptr);
     CommandHandlerTask.Create("CommandDataHandler", CommandDataHandler::CommandHandlerRun, nullptr);
     TelemetryHandlerTask.Create("TelemetryHandler", CommandDataHandler::TelemetryHandlerRun, nullptr);
 
