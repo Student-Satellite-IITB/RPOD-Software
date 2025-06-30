@@ -31,7 +31,8 @@ void StaticPoseEstimator::Run(void* arg) {
 
     while (true) {
         // Wait for a feature frame to be available
-        featureFrameQueue.receive(features); // Blocking behaviour
+        featureFrameQueue.receive(features); // Blocking behaviour\
+        // Note to self: Implementation changes if recieve function has timeout enabled
         pose = PoseEstimate(); // Reset pose
         if(estimator.estimate(features, pose)){
             if(poseEstimateQueue.try_send(pose)) {

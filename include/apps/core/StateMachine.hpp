@@ -1,28 +1,17 @@
 #pragma once
-
+#include "types.hpp"
 #include <string>
 
-enum class RPODState {
-    IDLE,
-    FAR_APPROACH,
-    CLOSE_APPROACH,
-    SOFT_DOCKING,
-    HARD_DOCKING,
-    DOCKED
-};
 
 class StateMachine {
 public:
     StateMachine();
 
     // Called every cycle to update state based on events
-    void update(bool farPoseDetected,
-                bool closePoseDetected,
-                bool softDockingDetected,
-                bool hardDockingConfirmed);
-
+    void update(RPODEvent event);
     RPODState getState() const;
     const char* getStateName() const;
+    static void Run(void* arg);
 
 private:
     RPODState state;

@@ -34,3 +34,29 @@ struct CommandPacket {
     uint8_t commandId;
     std::array<uint8_t, 64> payload;  // Fixed size for simplicity
 };
+
+struct Event{
+    uint8_t EvenId;
+};
+
+enum class RPODState {
+    IDLE,
+    SEARCH,
+    FAR_APPROACH,
+    CLOSE_APPROACH,
+    SOFT_DOCKING,
+    HARD_DOCKING,
+    DOCKED
+};
+
+enum class RPODEvent {
+    CMD_START_APPROACH,
+    VBN_LOCK_FAILED,
+    VBN_LOCK_ACQUIRED,
+    OUTER_PATTERN_DETECTED,
+    INNER_PATTERN_DETECTED,
+    HANDOVER_COMPLETE,
+    SOFT_DOCKING_DETECTED,
+    HARD_DOCKING_CONFIRMED,
+    CMD_RESET
+};

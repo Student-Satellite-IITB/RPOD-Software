@@ -6,3 +6,4 @@ extern Rtos::Queue<ImageFrame, 1> imageFrameQueue;
 extern Rtos::Queue<FeatureFrame, 1> featureFrameQueue;
 extern Rtos::Queue<CommandPacket, 5> commandQueue;
 extern Rtos::Queue<PoseEstimate, 1> poseEstimateQueue;
+extern Rtos::Queue<RPODEvent, 1> eventQueue;

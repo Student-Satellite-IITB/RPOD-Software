@@ -1,5 +1,6 @@
 #include "apps/vbn/FeatureDetector.hpp"
 #include "apps/vbn/StaticPoseEstimator.hpp"
+#include "apps/vbn/DynamicPoseEstimator.hpp"
 #include "apps/core/CommandDataHandler.hpp"
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -59,8 +60,9 @@ int main() {
     ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
     FeatureDetectionTask.Create("FeatureDetection", FeatureDetector::Run, nullptr);
     StaticPoseEstimationTask.Create("StaticPoseEstimation", StaticPoseEstimator::Run, nullptr);
-    CommandHandlerTask.Create("CommandDataHandler", CommandDataHandler::CommandHandlerRun, nullptr);
-    TelemetryHandlerTask.Create("TelemetryHandler", CommandDataHandler::TelemetryHandlerRun, nullptr);
+    DynamicPoseEstimationTask.Create("DynamicPoseEstimation", DynamicPoseEstimator::Run, nullptr);
+    //CommandHandlerTask.Create("CommandDataHandler", CommandDataHandler::CommandHandlerRun, nullptr);
+    //TelemetryHandlerTask.Create("TelemetryHandler", CommandDataHandler::TelemetryHandlerRun, nullptr);
 
     Rtos::SleepMs(1000);  // Allow tasks to initialize
     //commandQueue.send({0x01, {}});  // Send a dummy command to start processing
