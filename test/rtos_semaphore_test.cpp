@@ -3,6 +3,7 @@
 
 
 Rtos::BinarySemaphore sem;
+int timeout_ms = 2000;
 
 void Consumer(void*) {
     std::cout << "[Consumer] Waiting for semaphore...\n";
@@ -12,14 +13,17 @@ void Consumer(void*) {
         std::cout << "[Consumer] Semaphore acquired immediately!\n";
     } else {
         std::cout << "[Consumer] Semaphore not available, waiting...\n";
-        sem.take();  // Will block until Producer gives
-        std::cout << "[Consumer] Semaphore acquired after waiting!\n";
+        if (sem.take(timeout_ms)) {
+            std::cout << "[Consumer] Acquired\n";
+        } else {
+            std::cout << "[Consumer] Timed out\n";
+        }
     } 
 }
 
 void Producer(void*) {
     std::cout << "[Producer] Sleeping for 2 seconds before giving semaphore...\n";
-    Rtos::SleepMs(2000);  // Simulate delay
+    Rtos::SleepMs(1000);  // Simulate delay
     std::cout << "[Producer] Giving semaphore now.\n";
     sem.give();
 }

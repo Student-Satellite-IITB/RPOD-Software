@@ -3,24 +3,31 @@
 
 // Define the queue type with int messages and size 5
 Rtos::Queue<int, 5> queue;
+constexpr int PRODUCER_TIMEOUT_MS = 1000;
+constexpr int CONSUMER_TIMEOUT_MS = 1000;
 
 void Producer(void*) {
     std::cout << "[Producer] Thread started\n";
     for (int i = 1; i <= 10; ++i) {
-        queue.send(i);  // Now blocks if queue is full
-        std::cout << "[Producer] Sent: " << i << std::endl;
-        Rtos::SleepMs(50);  // Simulate slower production
+        if(queue.send(i, PRODUCER_TIMEOUT_MS)){ // Now blocks if queue is full
+            std::cout << "[Producer] Sent: " << i << std::endl;
+        }
+        else std::cout << "[Producer] Send timed out!\n";
+        Rtos::SleepMs(500);
     }
 }
 
-void Consumer(void*) {
-    Rtos::SleepMs(1000); 
+void Consumer(void*) { 
     std::cout << "[Consumer] Thread started\n";
     for (int i = 1; i <= 10; ++i) {
         int value;
-        queue.receive(value);  // Now blocks until item is available
-        std::cout << "[Consumer] Received: " << value << std::endl;
-        Rtos::SleepMs(500);  // Simulate processing
+        if (queue.receive(value, CONSUMER_TIMEOUT_MS)) {
+            std::cout << "[Consumer] Received: " << value << std::endl;
+            Rtos::SleepMs(500); // Simulate Processing
+        } else {
+            std::cout << "[Consumer] Receive timed out!\n";
+        }
+        Rtos::SleepMs(500);
     }
 }
 

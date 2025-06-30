@@ -3,6 +3,8 @@
 
 namespace Rtos {
 
+constexpr int MAX_TIMEOUT = -1; // Infinite block
+
 void SleepMs(int ms);
 
 //== Task abstraction ==//
@@ -42,7 +44,7 @@ public:
     BinarySemaphore();
     ~BinarySemaphore();
 
-    void take();            // Blocks until available
+    bool take(int timeout_ms = -1);            // Blocks until available
     bool try_take();        // Non-blocking
     void give();            // Releases the semaphore
 
@@ -62,7 +64,7 @@ public:
     CountingSemaphore(size_t maxCount, size_t initialCount);
     ~CountingSemaphore();
 
-    void take();      // block until count>0, then --count
+    bool take(int timeout_ms = -1);      // block until count>0, then --count
     bool try_take();  // non‐blocking: if count>0 then --count, else false
     void give();      // ++count, wake one waiter if present
 
@@ -99,11 +101,13 @@ class Queue {
 public:
     Queue(bool overwrite = false) : head(0), tail(0), overwrite_(overwrite) {}
 
-    void send(const T& item) {
+    bool send(const T& item, int timeout_ms = -1) {
         bool isFull = false;
 
         if(!overwrite_){
-            spaceAvailable.take();  // Wait for space
+            if(!spaceAvailable.take(timeout_ms)){
+                return false;
+            };  // Wait for space
         }
         else{
             if(!spaceAvailable.try_take()){
@@ -122,6 +126,7 @@ public:
         if(!isFull) {
             dataAvailable.give(); // Signal data is available
         }
+        return true;
     }
 
     bool try_send(const T& item) {
@@ -151,13 +156,16 @@ public:
         return true;
     }
 
-    void receive(T& item) {
-        dataAvailable.take();  // Wait for data
-        lock.lock();
-        item = buffer[tail];
-        tail = (tail + 1) % Capacity;
-        lock.unlock();
-        spaceAvailable.give(); // Signal space is available
+    bool receive(T& item, int timeout_ms = -1) {
+        if(dataAvailable.take(timeout_ms)){  // Wait for data
+            lock.lock();
+            item = buffer[tail];
+            tail = (tail + 1) % Capacity;
+            lock.unlock();
+            spaceAvailable.give(); // Signal space is available
+            return true;
+        }
+        else return false;
     }
 
     bool try_receive(T& item) {

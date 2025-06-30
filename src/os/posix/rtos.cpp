@@ -120,13 +120,49 @@ BinarySemaphore::~BinarySemaphore() {
     delete handle_;
 }
 
-void BinarySemaphore::take() {
+bool BinarySemaphore::take(int timeout_ms) {
+    if(timeout_ms<0){
+        pthread_mutex_lock(&handle_->mutex);
+        while (!handle_->available) {
+            pthread_cond_wait(&handle_->cond, &handle_->mutex);
+        }
+        handle_->available = false;  // consume the semaphore
+        pthread_mutex_unlock(&handle_->mutex);
+        return true;
+    }
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1'000'000;
+
+    // Normalize nanoseconds
+    if (ts.tv_nsec >= 1'000'000'000) {
+        ts.tv_sec += ts.tv_nsec / 1'000'000'000;
+        ts.tv_nsec %= 1'000'000'000;
+    }
+
+    bool acquired = false;
+
     pthread_mutex_lock(&handle_->mutex);
     while (!handle_->available) {
-        pthread_cond_wait(&handle_->cond, &handle_->mutex);
+        int res = pthread_cond_timedwait(&handle_->cond, &handle_->mutex, &ts);
+        if (res == ETIMEDOUT) {
+            acquired = false;
+            break;
+        }
+        if (res != 0) {
+            std::cerr << "[BinarySemaphore] pthread_cond_timedwait failed\n";
+            acquired = false;
+            break;
+        }
     }
-    handle_->available = false;  // consume the semaphore
+    if (handle_->available) {
+        handle_->available = false;
+        acquired = true;
+    }
     pthread_mutex_unlock(&handle_->mutex);
+    return acquired;
 }
 
 bool BinarySemaphore::try_take() {
@@ -175,13 +211,35 @@ CountingSemaphore::~CountingSemaphore() {
     delete handle_;
 }
 
-void CountingSemaphore::take() {
-    while (sem_wait(&handle_->sem) != 0) {
+bool CountingSemaphore::take(int timeout_ms) {
+    if(timeout_ms<0){
+        while (sem_wait(&handle_->sem) != 0) {
+            if (errno != EINTR) {
+                std::cerr << "[CountingSemaphore] sem_wait failed\n";
+                return false;
+            }
+        }
+        return true;
+    }
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1'000'000;
+
+    // Normalize nanoseconds
+    if (ts.tv_nsec >= 1'000'000'000) {
+        ts.tv_sec += ts.tv_nsec / 1'000'000'000;
+        ts.tv_nsec %= 1'000'000'000;
+    }
+
+    while(sem_timedwait(&handle_->sem, &ts)!=0){
+        if(errno == ETIMEDOUT) return false;
         if (errno != EINTR) {
             std::cerr << "[CountingSemaphore] sem_wait failed\n";
-            return;
+            return false;
         }
     }
+    return true;
 }
 
 bool CountingSemaphore::try_take() {
