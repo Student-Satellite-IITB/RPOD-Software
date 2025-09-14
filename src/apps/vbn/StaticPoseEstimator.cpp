@@ -6,12 +6,8 @@ StaticPoseEstimator::StaticPoseEstimator(){
     // Constructor can initialize any required resources
 }
 
-bool StaticPoseEstimator::estimate(const FeatureFrame& features, PoseEstimate& pose) {
+bool StaticPoseEstimator::estimate(const msg::FeatureFrame& features, PoseEstimate& pose) {
     // Placeholder for actual pose estimation logic
-    if (features.keypoints.size() < 4) {
-        std::cerr << "[SPE] Not enough keypoints for pose estimation\n";
-        return false;
-    }
     // For now, we just set a dummy pose
     pose.x = 0.0f;
     pose.y = 0.0f;
@@ -26,7 +22,7 @@ bool StaticPoseEstimator::estimate(const FeatureFrame& features, PoseEstimate& p
 
 void StaticPoseEstimator::Run(void* arg) {
     StaticPoseEstimator estimator;
-    FeatureFrame features;
+    msg::FeatureFrame features;
     PoseEstimate pose;
 
     while (true) {

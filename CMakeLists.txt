@@ -47,7 +47,7 @@ file(GLOB_RECURSE SOURCES
 # ==== Executables ====
 # format: add_executable(<name> <main source> <source files>)
 # Main application executable
-add_executable(rpod_test_pipeline src/main.cpp ${SOURCES})
+add_executable(rpod_test_pipeline src/main.cpp src/apps/vbn/ImageCapture.cpp src/apps/queues.cpp src/os/posix/rtos.cpp)
 # Add test executables
 add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SOURCES})
 add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)

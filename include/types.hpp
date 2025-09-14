@@ -3,20 +3,20 @@
 #include <cstdint>
 #include <array>
 
-struct ImageFrame {
-    uint8_t* data;
-    int width;
-    int height;
-};
+// struct ImageFrame {
+//     uint8_t* data;
+//     int width;
+//     int height;
+// };
 
-struct Keypoint {
-    int x, y;
-    float response;
-};
+// struct Keypoint {
+//     int x, y;
+//     float response;
+// };
 
-struct FeatureFrame {
-    std::vector<Keypoint> keypoints;
-};
+// struct FeatureFrame {
+//     std::vector<Keypoint> keypoints;
+// };
 
 struct PoseEstimate {
     float x = 0.0f;

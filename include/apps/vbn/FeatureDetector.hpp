@@ -5,7 +5,7 @@
 class FeatureDetector {
 public:
     FeatureDetector();  // constructor sets up the extractor
-    bool detect(const ImageFrame& img, FeatureFrame& features);
+    bool detect(const msg::ImageFrame& img, msg::FeatureFrame& features);
     static void Run(void* arg);
 
 private:
