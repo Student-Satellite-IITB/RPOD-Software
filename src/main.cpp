@@ -1,4 +1,4 @@
-// #include "apps/vbn/FeatureDetector.hpp"
+#include "apps/vbn/FeatureDetector.hpp"
 // #include "apps/vbn/StaticPoseEstimator.hpp"
 // #include "apps/vbn/DynamicPoseEstimator.hpp"
 #include "apps/core/CommandDataHandler.hpp"
@@ -80,7 +80,7 @@ void ImageCapture(void* arg) {
 int main() {
     // Create tasks
     ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
-    // FeatureDetectionTask.Create("FeatureDetection", FeatureDetector::Run, nullptr);
+    FeatureDetectionTask.Create("FeatureDetection", vbn::FeatureDetector::Run, nullptr);
     // StaticPoseEstimationTask.Create("StaticPoseEstimation", StaticPoseEstimator::Run, nullptr);
     // DynamicPoseEstimationTask.Create("DynamicPoseEstimation", DynamicPoseEstimator::Run, nullptr);
     //CommandHandlerTask.Create("CommandDataHandler", CommandDataHandler::CommandHandlerRun, nullptr);
