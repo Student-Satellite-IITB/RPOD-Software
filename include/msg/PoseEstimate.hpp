@@ -1,23 +1,25 @@
 #pragma once
 #include <cstdint>
-#include "msg/FeatureFrame.hpp"   // for msg::TrackState
+#include "msg/FeatureFrame.hpp"   // for msg::TrackState and msg::PatternId
 
 namespace msg {
 
+// Pose of docking target LED Pattern P expressed in the camera frame C.
+// Keep SOM strictly in camera frame; MCU owns extrinsics & frame transforms.
 
 struct PoseEstimate {
+  uint64_t t_exp_end_us;   // Exposure-end timestamp (µs) of the source image.
 
-  // Pose of docking target LED Pattern P expressed in the camera frame C (T_P/C).
+  // Pose of docking target LED Pattern P expressed in the camera frame C (H_P/C).
   float q_PbyC[4];   // Unit quaternion (w,x,y,z). Orientation of P relative to C.
                      // Convention: rotates vectors from P into C (v_C = R(q)*v_P).
   float t_PbyC[3];   // Translation of the origin of P expressed in C: [x,y,z] (m).
   
-  // --- Measurement identity ---
-  uint64_t t_exp_end_us;   // Exposure-end timestamp (µs) of the source image.
+  // --- Traceability---
+  PatternId pattern_id;  // PatternId enum of the observed pattern (INNER/OUTER).
   uint32_t frame_id;       // Image frame counter (for correlation & drop detection).
-
-  // --- Operational status ---
   msg::TrackState state;   // INIT / TRACK / LOST (pass-through from detector/tracker).
+  uint8_t  used_led_mask;  // bit i=1 if slot i contributed (INNER: 0..4); 0 if unknown/unused
   uint8_t valid;           // 1 if this pose passed estimator gates; 0 if unusable this frame.
 
   // --- Quality Metrics TODO (add later, when needed) ---

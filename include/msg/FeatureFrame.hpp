@@ -11,51 +11,65 @@ namespace msg {
 // Mode set by Detector+Tracker; Estimator may suggest downgrade for next frame.
 enum class TrackState : uint8_t { INIT = 0, TRACK = 1, LOST = 2 };
 
+// Target Pattern IDs
+enum class PatternId : uint8_t { UNKNOWN = 0, INNER = 1, OUTER = 2 };
+
+// Bitmask of what's visible in THIS frame (detector's judgment).
+enum : uint8_t {
+    VISIBLE_NONE  = 0,
+    VISIBLE_INNER = 1 << 0, // bit 0 set → INNER visible
+    VISIBLE_OUTER = 1 << 1, // bit 1 set → OUTER visible
+    VISIBLE_BOTH  = VISIBLE_INNER | VISIBLE_OUTER
+};
+
 // ----- 5-LED cross: fixed physical IDs and array slots -----
 // Physical IDs:
 // ID 1 = TOP, ID 2 = LEFT, ID 3 = BOTTOM, ID 4 = RIGHT, ID 5 = CENTER (off-plane)
 // Array layout (zero-based) maps to those IDs exactly via LedSlot:
+
 enum class LedSlot : uint8_t {
-    TOP    = 0,  // physical ID 1: top (smallest v in image; "north")
-    LEFT   = 1,  // physical ID 2: left  of center ("west")
-    BOTTOM = 2,  // physical ID 3: bottom ("south")
-    RIGHT  = 3,  // physical ID 4: right ("east")
-    CENTER = 4   // physical ID 5: central, off-plane LED
+    TOP    = 0,
+    LEFT   = 1,  
+    BOTTOM = 2,  
+    RIGHT  = 3,  
+    CENTER = 4  
 };
-constexpr std::size_t NUM_LEDS = 5;
 
 // One LED measurement in image pixels (subpixel allowed).
 struct Led2D {
     float u_px;        // column (x) in pixels, subpixel allowed
     float v_px;        // row (y) in pixels, subpixel allowed
     float strength;    // 0..1 detector confidence (e.g., normalized peak or blob SNR)
+    uint8_t pattern_id; // PatternId enum as uint8_t
+    uint8_t slot_id;    // cast of LedSlot for INNER; or 0..N-1 for OUTER
     uint8_t valid;     // 1 = this LED was seen this frame; 0 = missing
 };
 
-// Optional extra points (for far-range PnP if you enable more LEDs later)
-constexpr std::size_t MAX_EXTRA = 3;
-struct Extra2D {
-    float u_px, v_px, strength;
-    uint8_t id;        // 255 = unknown, else a stable index if you assign one
-};
+// Keep capacity small & deterministic. 8 is a good starting point.
+// - INNER uses up to 5 slots (TOP/LEFT/BOTTOM/RIGHT/CENTER).
+// - OUTER can use up to 8 asymmetric slots.
+// - If BOTH are visible, you can include a mix (estimator will filter by pattern).
+constexpr std::size_t MAX_LEDS = 8;
 
-// POD, fixed-size message: deterministic to copy, no heap
 struct FeatureFrame {               
-    // Known 5-LED cross, fixed slots map directly to your 3D template indices.
-    std::array<Led2D, NUM_LEDS> led; 
-    // Optional extras (keep small, bounded)
-    std::array<Extra2D, MAX_EXTRA> extra;
-    uint8_t  extra_count;                 // 0..MAX_EXTRA  <-- add this
+    std::array<Led2D, MAX_LEDS> leds; 
+    uint8_t  led_count;              // 0...MAX_LEDS: number of valid entries in leds[]
+
+    uint8_t visible_mask;            // bitmask of visible patterns (VISIBLE_*)
+    // Which template the detector recommends as "primary" this frame;
+    // estimator may still try both if visible_mask==VISIBLE_BOTH.
+    PatternId pattern_id;          // dominant pattern ID (UNKNOWN/INNER/OUTER)
 
     // --- Measurement identity ---
     uint64_t t_exp_end_us;            // copy-through from ImageFrame (exposure end, µs)
-    uint32_t frame_id;                // copy-through from ImageFrame
+    uint32_t frame_id;                // image frame counter (optional) copy-through from ImageFrame
 
     // Operational status
     TrackState state;                 // INIT/TRACK/LOST from detector/tracker
 
     // Quality metrics
     float sat_pct;                    // % pixels saturated in source frame (0..100), helps quality gating
+
     // (optional future fields: avg_blob_radius_px, motion_px_per_frame, etc.)
 };
 
