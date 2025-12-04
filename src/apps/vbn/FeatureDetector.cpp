@@ -184,9 +184,9 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
 
                 // Accumulate blob properties
                 // Weighter coordinates used for centroid calculation after flood-filling
-                B.u_cx += static_cast<float>(pu)*static_cast<float>(p_val);
-                B.v_cx += static_cast<float>(pv)*static_cast<float>(p_val);
-                B.intensity += static_cast<float>(p_val);
+                B.u_cx += static_cast<float>(pu)*std::pow(static_cast<float>(p_val),2);
+                B.v_cx += static_cast<float>(pv)*std::pow(static_cast<float>(p_val),2);
+                B.intensity += std::pow(static_cast<float>(p_val),2);
                 B.area += 1;
 
                 // Explore 8-connected neighbors

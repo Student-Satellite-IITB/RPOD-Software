@@ -5,7 +5,7 @@
 
 int main() {
 
-    cv::Mat img = cv::imread("../tools/vbn_27cm.png", cv::IMREAD_GRAYSCALE);
+    cv::Mat img = cv::imread("../tools/range0_exp200_1.png", cv::IMREAD_GRAYSCALE);
     if (img.empty()) {
         std::cerr << "ERROR: Could not load image\n";
         return -1;
@@ -49,10 +49,13 @@ int main() {
         cv::circle(
             annotated,
             pt,
-            6,
+            20,
             cv::Scalar(0, 0, 255),  // BGR
             2
         );
+
+        cv::Scalar color(0, 255, 0); 
+        cv::drawMarker(annotated, pt, color, cv::MARKER_CROSS, 50, 2);
 
         // green text: LED index or slot_id
         std::string label = std::to_string(i); // or std::to_string(L.slot_id)
@@ -67,7 +70,7 @@ int main() {
         );
     }
 
-    cv::imwrite("../tools/vbn_27cm_annotated.jpg", annotated);
+    cv::imwrite("../tools/range0_exp200_1_annotated.jpg", annotated);
     std::cout << "Saved annotated image: ../tools/annotated.jpg\n";
 
     return 0;

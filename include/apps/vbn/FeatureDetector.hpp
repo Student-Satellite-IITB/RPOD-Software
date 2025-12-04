@@ -10,9 +10,9 @@ namespace vbn {
 // Configuration for the FeatureDetector (tunable parameters, no state).
 // ---------------------------------------------------------------------------
 struct FeatureDetectorConfig {
-    uint8_t BIN_THRESH        = 180;    // GRAY8 threshold for LED blobs (0..255)
-    int     MIN_BLOB_AREA     = 3;      // reject tiny noise blobs [pixels]
-    int     MAX_BLOB_AREA     = 400;    // reject huge/glare blobs [pixels]
+    uint8_t BIN_THRESH        = 20;    // GRAY8 threshold for LED blobs (0..255)
+    int     MIN_BLOB_AREA     = 100;      // reject tiny noise blobs [pixels]
+    int     MAX_BLOB_AREA     = 20000;    // reject huge/glare blobs [pixels]
 
     // Max acceptable geometric score for the 5-LED cross pattern.
     float PATTERN_MAX_SCORE = 1e2f;
