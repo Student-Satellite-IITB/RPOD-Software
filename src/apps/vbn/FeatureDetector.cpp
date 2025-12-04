@@ -593,7 +593,11 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
+
+        // If in TRACK state, try once more
         if(m_current_state == msg::TrackState::TRACK){
+
+            // Downgrade to LOST
             m_current_state = msg::TrackState::LOST;
 
             bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
@@ -615,6 +619,9 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
                 // frame will be dropped
             }
         }
+
+        out.state = m_current_state;
+        return false; // Detection was unsucessfull
     }
     // Pattern identification was successful
     m_current_state = msg::TrackState::TRACK;

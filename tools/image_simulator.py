@@ -3,7 +3,7 @@ import cv2
 import matplotlib.pyplot as plt
 
 # Define image size
-img_width, img_height = 3280, 2464  # OV5647 resolution
+img_width, img_height = 640, 480  # OV5647 resolution
 background_color = 0  # Black background for grayscale
 
 # Create a blank grayscale image (8-bit)
@@ -60,4 +60,4 @@ plt.figure(figsize=(10, 7))
 plt.imshow(image, cmap="gray")
 plt.axis("off")
 plt.show()
-cv2.imwrite("simulated-image.png", image)
+cv2.imwrite("../tools/simulated-image.png", image)

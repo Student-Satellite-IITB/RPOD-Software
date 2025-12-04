@@ -78,8 +78,8 @@ private:
     static constexpr std::size_t MAX_BLOBS = 32;
     // Maximum image size for visited map
     // Have to ensure this is large enough
-    static constexpr int VISITED_MAX_W = 640;
-    static constexpr int VISITED_MAX_H = 480;
+    static constexpr int VISITED_MAX_W = 1280;
+    static constexpr int VISITED_MAX_H = 800;
 
     using BlobArray = std::array<Blob, MAX_BLOBS>; //type alias for arrray of blobs
     std::size_t detectBlobs(const msg::ImageFrame& img, BlobArray& blobs);
