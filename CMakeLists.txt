@@ -49,8 +49,11 @@ file(GLOB_RECURSE SOURCES
 # Main application executable
 add_executable(rpod_test_pipeline src/main.cpp ${SOURCES})
 add_executable(rpod_som src/som_main.cpp ${SOURCES})
+
 # Add test executables
 add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SOURCES})
+add_executable(vbn_staticposeestimation_test test/vbn_staticposeestimation_test.cpp ${SOURCES})
+
 add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_mutex_test test/rtos_mutex_test.cpp src/os/posix/rtos.cpp)
 add_executable(rtos_semaphore_test test/rtos_semaphore_test.cpp src/os/posix/rtos.cpp)
@@ -64,6 +67,7 @@ if(TARGET_PLATFORM STREQUAL "linux")
     target_link_libraries(rpod_som ${OpenCV_LIBS} pthread)
     # Link VBN test executable
     target_link_libraries(vbn_featuredetection_test ${OpenCV_LIBS} pthread)
+    target_link_libraries(vbn_staticposeestimation_test ${OpenCV_LIBS} pthread)
     # Link RTOS test executables
     target_link_libraries(rtos_task_test pthread)
     target_link_libraries(rtos_mutex_test pthread)

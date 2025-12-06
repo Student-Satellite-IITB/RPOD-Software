@@ -5,7 +5,14 @@
 
 int main() {
 
-    cv::Mat img = cv::imread("../tools/range0_exp200_1.png", cv::IMREAD_GRAYSCALE);
+    // Choose a base name once
+    std::string base = "../tools/range0_exp200_1";
+
+    // Build input and output filenames from it
+    std::string input_path  = base + ".png";
+    std::string output_path = base + "_annotated_fd.jpg";
+
+    cv::Mat img = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
     if (img.empty()) {
         std::cerr << "ERROR: Could not load image\n";
         return -1;
@@ -18,8 +25,17 @@ int main() {
     input.height = img.rows;
     input.stride = img.cols;
 
+    vbn::FeatureDetectorConfig det_cfg;
+    det_cfg.BIN_THRESH = 40; // Example: adjust threshold if needed
+    det_cfg.MIN_BLOB_AREA = 100;
+    det_cfg.MAX_BLOB_AREA = 20000;
+    det_cfg.PATTERN_MAX_SCORE = 150.0f;
+    det_cfg.MAX_OFFSET_SCORE = 10.0f;
+    det_cfg.ROI_RADIUS_MARGIN = 2.0f;
+    det_cfg.ROI_BORDER_PX = 8;
+
     msg::FeatureFrame out;
-    vbn::FeatureDetector detector;
+    vbn::FeatureDetector detector(det_cfg);
 
     auto t0 = std::chrono::high_resolution_clock::now();
     bool ok = detector.detect(input, out);
@@ -70,8 +86,8 @@ int main() {
         );
     }
 
-    cv::imwrite("../tools/range0_exp200_1_annotated.jpg", annotated);
-    std::cout << "Saved annotated image: ../tools/annotated.jpg\n";
+    cv::imwrite(output_path, annotated);
+    std::cout << "Saved annotated image: " << output_path << "\n";
 
     return 0;
 }
