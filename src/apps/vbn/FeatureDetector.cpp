@@ -21,7 +21,7 @@ static inline FeatureDetectorConfig sanitise(const FeatureDetectorConfig& in) {
 
     return cfg;
 }
-}
+} // namespace vbn
 
 vbn::FeatureDetector::FeatureDetector(const FeatureDetectorConfig& cfg): m_cfg(sanitise(cfg)) {
     reset();
@@ -258,7 +258,7 @@ std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, std::size_t b
     return led_blob_count;
 }
 
-int vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
+bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     //   index 0 -> TOP
     //   index 1 -> LEFT
     //   index 2 -> BOTTOM
@@ -290,7 +290,7 @@ int vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     if (r!=3){
         // Degenerate case
         // All LEDs are hoizontally aligned
-        return -1;
+        return false;
     }
 
     int idx_left = rem[0];
@@ -328,7 +328,7 @@ int vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     if (idx_center == -1) {
         // Degenerate case
         // All LEDs are vertically aligned
-        return -1;
+        return false;
     }
     
     // Arranged led_blob array
@@ -341,7 +341,7 @@ int vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     arranged_leds[4] = combo[idx_center];
 
     combo = arranged_leds;
-    return 0;
+    return true;
 }
 
 float vbn::FeatureDetector::evaluateInnerCross(const std::array<Blob,5>& combo){
@@ -369,8 +369,8 @@ float vbn::FeatureDetector::evaluateInnerCross(const std::array<Blob,5>& combo){
     };
 
     // Pattern center
-    float u0 = 0.5f * (L.u_cx + R.u_cx);
-    float v0 = 0.5f * (T.v_cx + B.v_cx);
+    float u0 = 0.25f * (T.u_cx + L.u_cx + B.u_cx + R.u_cx);
+    float v0 = 0.25f * (T.v_cx + L.v_cx + B.v_cx + R.v_cx);
 
     Blob center;
     center.u_cx = u0;
@@ -458,7 +458,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
         // Identifies which LEDs have failed
         led_count = 0;
         pattern_id = msg::PatternId::UNKNOWN;
-        confidence = 0.0f;
+        confidence = 1e6f;
         return false; // Not enough blobs to form the pattern
     }
 
@@ -492,7 +492,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
                         };
 
                         // Arrange into cannonical order
-                        if(InnerPatternArrange(combo) !=0){
+                        if(!InnerPatternArrange(combo)){
                             // try next combination
                             continue;
                         }
@@ -593,6 +593,8 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
+        
+        std::cout << "[FeatureDetector] Pattern identification failed with confidence: " << confidence << "\n";
 
         // If in TRACK state, try once more
         if(m_current_state == msg::TrackState::TRACK){

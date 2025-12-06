@@ -88,7 +88,7 @@ private:
     msg::PatternId m_last_pattern_id = msg::PatternId::UNKNOWN;
 
     
-    int InnerPatternArrange(std::array<Blob,5>& combo);
+    bool InnerPatternArrange(std::array<Blob,5>& combo);
     float evaluateInnerCross(const std::array<Blob,5>& combo);
     using LedArray = std::array<msg::Led2D, msg::MAX_LEDS>; //type alias for array of leds
     bool identifyPattern(const BlobArray& blobs,
