@@ -579,9 +579,47 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     }
     
     // BLOB-AREA THRESHOLDING
-    const std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
-    
+
+    // threshold blobs modifies blobs in place so we back them up
+    BlobArray blobs_raw = blobs; 
+
+    std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
+
     std::cout << "[FeatureDetector] " << num_led_blobs << " blobs after area thresholding\n";
+
+    // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
+    // It might be that the blobs are valid but smaller than min area
+    // Even if not the pattern identification step will reject them cheaply
+    if(num_led_blobs < 5){
+        // Not enough blobs to identify pattern
+        // We perform some FDIR logic
+
+        if(num_blobs == 5){
+            // All blobs are potential LED blobs
+            // No area thresholding needed
+
+            blobs = blobs_raw; // Restore raw blobs
+            num_led_blobs = num_blobs;
+
+        } else {
+            // More than 5 blobs detected but none over min area threshold
+            
+            // Mark lost as this is a degraded state if we are in TRACKING mode
+            // Dont return false immediately as we can try top-5 blobs for pattern identification
+            m_current_state = msg::TrackState::LOST;
+
+            // Future FDIR logic:
+            // Pass on top-5 blobs by intensity to pattern identification step
+            // Currently not implemnented so we return false here
+            out.state = m_current_state;
+            return false; // Detection was unsucessfull due to insufficient blobs
+        }
+    }
+
+    // Idea for future FDIR logic here:
+    // if num_led_blobs < 5 post thresholding relax area thresholds
+    // and try again till some limit
+    // Or use dynamic area thresholds based on range estimate if any
 
     // PATTERN-IDENTIFICATION
     LedArray leds{};

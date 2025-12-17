@@ -5,13 +5,14 @@
 #include <iostream>
 #include <chrono>
 #include <cmath>
+#include <iomanip> // for std::setprecision
 
 constexpr double RAD2DEG = 180.0 / M_PI;
 
 int main() {
 
     // Choose a base name once
-    std::string base = "../tools/vbn_27cm";
+    std::string base = "../tools/frame_preview";
 
     // Build input and output filenames from it
     std::string input_path  = base + ".png";
@@ -139,6 +140,8 @@ int main() {
         double pitch_deg = pose.pitch * RAD2DEG;
         double yaw_deg   = pose.yaw   * RAD2DEG;
         double range_cm  = pose.range_m * 100.0; // m → cm
+
+        std::cout << std::fixed << std::setprecision(3); // Set precision for floating-point output
 
         std::cout << "[SPE] Pose estimation SUCCESS.\n";
         std::cout << "      Azimuth  = " << pose.az  * RAD2DEG << " deg\n";
