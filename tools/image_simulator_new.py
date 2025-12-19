@@ -5,7 +5,7 @@ import cv2
 # CONFIGURATION
 
 # CAMERA POSE WRT TARGET PATTERN
-RANGE_M = 0.27         # Distance from camera to pattern origin (along camera
+RANGE_M = 0.20         # Distance from camera to pattern origin (along camera
 AZIMUTH_DEG = 0.0   # Rotation around Hill Frame (+Z) camera vertical axis (+Y)
 ELEVATION_DEG = 0.0 # Rotation around Hill Frame (+Y) camera horizontal axis (+X)
 ROLL_DEG  = 0.0     # Rotation around Hill Frame x-axis, Camera z-axis
@@ -14,7 +14,7 @@ YAW_DEG   = 0.0     # Rotation around Hill Frame z-axis, Camera y-axis
 
 # Image Resolution
 W, H = 1280, 800
-BIT_DEPTH = 8          # 8, 10, 12, ... up to 16
+BIT_DEPTH = 16          # 8, 10, 12, ... up to 16
 BLACK_DN = 0            # 0..(2^BIT_DEPTH - 1)
 
 OUT_PATH  = "tools/frame_actual.png"
@@ -107,17 +107,23 @@ def apply_psf_blur(image, ksize=21, sigma=3.0):
     return image
 
 def add_gaussian_blob(image, center_px, peak_dn, sigma_px, half_width_px=10):
-    cx = int(round(center_px[0]))
-    cy = int(round(center_px[1]))
 
-    x0 = max(0, cx - half_width_px); x1 = min(W, cx + half_width_px + 1)
-    y0 = max(0, cy - half_width_px); y1 = min(H, cy + half_width_px + 1)
+    # Sub-pixel centroids
+    cx = float(center_px[0])
+    cy = float(center_px[1])
+
+    x0 = max(0, int(np.floor(cx - half_width_px)))
+    x1 = min(W, int(np.ceil (cx + half_width_px + 1)))
+    y0 = max(0, int(np.floor(cy - half_width_px)))
+    y1 = min(H, int(np.ceil (cy + half_width_px + 1)))
+
     if x0 >= x1 or y0 >= y1:
         return image
 
     xs = (np.arange(x0, x1) - cx).astype(np.float32)
     ys = (np.arange(y0, y1) - cy).astype(np.float32)
     X, Y = np.meshgrid(xs, ys)
+    
     G = np.exp(-(X*X + Y*Y) / (2.0 * sigma_px * sigma_px))
 
     patch = peak_dn * G
