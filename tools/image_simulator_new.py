@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import sys
 
 #######################################################
 # CONFIGURATION
@@ -81,6 +82,33 @@ if BLUR_KSIZE % 2 == 0:
 ##########################################################
 # HELPER FUNCTIONS
 
+def apply_cli_overrides():
+    """
+    Usage:
+      python3 image_simulator_new.py RANGE_M AZIMUTH_DEG ELEVATION_DEG ROLL_DEG PITCH_DEG YAW_DEG
+
+    Any missing values keep the defaults from the file.
+    """
+    global RANGE_M, AZIMUTH_DEG, ELEVATION_DEG, ROLL_DEG, PITCH_DEG, YAW_DEG
+
+    vals = sys.argv[1:]
+    if len(vals) == 0:
+        return  # no overrides
+
+    # pad to 6, keep defaults for missing
+    floats = []
+    for s in vals[:6]:
+        floats.append(float(s))
+    while len(floats) < 6:
+        floats.append(None)
+
+    if floats[0] is not None: RANGE_M = floats[0]
+    if floats[1] is not None: AZIMUTH_DEG = floats[1]
+    if floats[2] is not None: ELEVATION_DEG = floats[2]
+    if floats[3] is not None: ROLL_DEG = floats[3]
+    if floats[4] is not None: PITCH_DEG = floats[4]
+    if floats[5] is not None: YAW_DEG = floats[5]
+
 def add_blob(image, blob_center_px, peak_dn = PEAK_DN, blob_radius_px= BLOB_RADIUS_PX):
 
     x,y = int(blob_center_px[0]), int(blob_center_px[1])
@@ -142,20 +170,27 @@ def make_inner_pattern_vbn(D_mm: float):
         [0.0, 0.0, -D],    # CENTER (towards camera)
     ], dtype=np.float32)
 
-def R_from_rpy_vbn(roll, pitch, yaw):
-    cr, sr = np.cos(roll),  np.sin(roll)
-    cp, sp = np.cos(pitch), np.sin(pitch)
-    cy, sy = np.cos(yaw),   np.sin(yaw)
+def Rx(phi):
+    c, s = np.cos(phi), np.sin(phi)
+    return np.array([[1,0,0],
+                     [0, c, s],
+                     [0,-s, c]], dtype=float)
 
-    # R = Rz(yaw) * Ry(pitch) * Rx(roll)
-    R = np.array([
-        [ cy*cp,  cy*sp*sr - sy*cr,  cy*sp*cr + sy*sr],
-        [ sy*cp,  sy*sp*sr + cy*cr,  sy*sp*cr - cy*sr],
-        [  -sp,           cp*sr,           cp*cr     ],
-    ], dtype=np.float32)
+def Ry(theta):
+    c, s = np.cos(theta), np.sin(theta)
+    return np.array([[ c,0,-s],
+                     [ 0,1, 0],
+                     [ s,0, c]], dtype=float)
 
-    Rnew = P_CAM_TO_AERO.T @ R @ P_CAM_TO_AERO          # now compatible with your camera-frame projection
-    return Rnew
+def Rz(psi):
+    c, s = np.cos(psi), np.sin(psi)
+    return np.array([[ c, s,0],
+                     [-s, c,0],
+                     [ 0, 0,1]], dtype=float)
+
+def R_C_P_321_aero(roll, pitch, yaw):
+    phi, theta, psi = roll, pitch, yaw
+    return Rx(phi) @ Ry(theta) @ Rz(psi)  # intrinsic 3-2-1, passive P->C
 
 def los_dir_from_az_el(az_deg, el_deg):
     az = np.deg2rad(az_deg)
@@ -177,7 +212,12 @@ def project_vbn_centered(pts_pat_mm, roll, pitch, yaw, range_mm, fx, fy, az_deg,
     dir_vec = los_dir_from_az_el(az_deg, el_deg)
     t = (range_mm * dir_vec).astype(np.float32)
 
-    R = R_from_rpy_vbn(roll, pitch, yaw)
+    R_aero = R_C_P_321_aero(roll, pitch, yaw)     # in aero basis
+    R  = P_CAM_TO_AERO.T @ R_aero @ P_CAM_TO_AERO # in camera basis
+
+    # pts_pat_mm (NX3) converted to 3XN for matrix multiplication
+    # R @ pts_pat_mm.T (3xN) converted back to NX3 for further computation
+    # t (3,) 1D Array reshape(1,3) makes it a 1X3 row vector and numpy adds considering NX3 each row + t
     pts_cam = (R @ pts_pat_mm.T).T + t.reshape(1,3)
 
     X, Y, Z = pts_cam[:,0], pts_cam[:,1], pts_cam[:,2]
@@ -204,6 +244,9 @@ def make_preview_u8(img_actual, bit_depth):
 # MAIN
 
 if __name__ == "__main__":
+
+    apply_cli_overrides()
+    
     # Create a blank RAW-like image buffer (always uint16)
     img = np.full((H, W), BACKGROUND_COLOR, dtype=DTYPE)
 

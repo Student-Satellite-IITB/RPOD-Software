@@ -12,7 +12,7 @@ constexpr double RAD2DEG = 180.0 / M_PI;
 int main() {
 
     // Choose a base name once
-    std::string base = "../tools/frame_preview";
+    std::string base = "../tools/frame_actual";
 
     // Build input and output filenames from it
     std::string input_path  = base + ".png";
