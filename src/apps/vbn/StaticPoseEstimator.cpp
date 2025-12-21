@@ -2,11 +2,51 @@
 #include <cmath>
 #include <iostream>
 
+#include <Eigen/Core>
+#include <Eigen/Geometry> 
+
+namespace {
+    using Vec2 = Eigen::Vector2f;
+    using Vec3 = Eigen::Vector3f;
+    using Mat3 = Eigen::Matrix3f;
+}
+
+namespace vbn
+{
+    struct Pose{
+        Mat3 R = Mat3::Identity();
+        Vec3 t = Vec3::Zero();
+    };
+} // namespace vbn
+
+
 namespace vbn {
 // Internal sanitisation of config parameters
 // not public API
 static inline StaticPoseEstimatorConfig sanitise(const StaticPoseEstimatorConfig& in) {
     StaticPoseEstimatorConfig cfg = in;
+
+    const float D = cfg.PATTERN_GEOMETRY.PATTERN_RADIUS;
+    const float H = cfg.PATTERN_GEOMETRY.PATTERN_OFFSET;
+
+    // Check the validity of D and H; if not replace with defaults
+    if (!(std::isfinite(D) && D > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.050f;
+    if (!(std::isfinite(H) && H > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.020f;
+
+    const float D2 = cfg.PATTERN_GEOMETRY.PATTERN_RADIUS;
+    const float H2 = cfg.PATTERN_GEOMETRY.PATTERN_OFFSET;
+
+    // Compute pseudo-inverse for your 5-point cross pattern:
+    // Points: T(0,-D,0), L(-D,0,0), B(0,+D,0), R(+D,0,0), C(0,0,-H)
+    const float inv2D = 1.0f / (2.0f * D);
+    const float invH  = 1.0f / H;
+
+    cfg.PATTERN_GEOMETRY.P_PINV = {
+         0.0f,  -inv2D, 0.0f,  inv2D, 0.0f,
+        -inv2D,  0.0f,  inv2D, 0.0f,  0.0f,
+         0.0f,   0.0f,  0.0f,  0.0f, -invH
+    };
+
 
     // If invalid parameters are set, replace with safe defaults
     if (cfg.MAX_REPROJ_ERROR_PX <= 0.0f) cfg.MAX_REPROJ_ERROR_PX = 1.0f;
@@ -238,8 +278,121 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
     return true;
 }
 
+bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, float az, float el, Pose& pose) const{
 
-bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed,
+    // Assumptions: Weak Perspective Projection
+
+    using Mat53 = Eigen::Matrix<float, 5, 3>;
+    using Vec5  = Eigen::Matrix<float, 5, 1>;
+    using Mat35RM = Eigen::Matrix<float, 3, 5, Eigen::RowMajor>;
+
+    const auto fx = m_cfg.CAM_INTRINSICS.fx;
+    const auto fy = m_cfg.CAM_INTRINSICS.fy;
+    
+    const msg::Led2D& T = packed.inner[0];
+    const msg::Led2D& L = packed.inner[1];
+    const msg::Led2D& B = packed.inner[2];
+    const msg::Led2D& R = packed.inner[3];
+    const msg::Led2D& C = packed.inner[4];
+
+    // Pattern centre in PPF
+    const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
+    const float v_c = 0.25f * (T.v_px + L.v_px + B.v_px + R.v_px);
+
+    // Normalised center coordinates
+    const float x_c = u_c/fx;
+    const float y_c = v_c/fy;
+
+    // Normalised LED coordinate stack
+    Vec5 X,Y;
+    X << T.u_px/fx - x_c,
+         L.u_px/fx - x_c,
+         B.u_px/fx - x_c,
+         R.u_px/fx - x_c,
+         C.u_px/fx - x_c;
+
+    Y << T.v_px/fy - y_c,
+         L.v_px/fy - y_c,
+         B.v_px/fy - y_c,
+         R.v_px/fy - y_c,
+         C.v_px/fy - y_c;
+
+    // Load precomputed pseudo-inverse (row-major 3x5)
+    Eigen::Map<const Mat35RM> P_pinv(m_cfg.PATTERN_GEOMETRY.P_PINV.data());
+
+    Vec3 a1 = P_pinv*X;
+    Vec3 a2 = P_pinv*Y;
+    
+
+    if (!a1.allFinite() || !a2.allFinite()) {
+        return false;
+    }
+
+    // Estimate scale
+    const float s1 = a1.norm();
+    const float s2 = a2.norm();
+    const float s  = 0.5f * (s1 + s2);
+
+    if (!(std::isfinite(s) && s > 1e-6f)) {
+        return false;
+    }
+
+    const float Z0 = 1.0f / s;
+
+    if (!(std::isfinite(Z0) && Z0 > 0.0f)) {
+        return false;
+    }
+
+    // a1 = 1/Zo(r1 - x_c*r3)
+    // a2 = 1/Zo(r2 - y_c*r3)
+
+    Vec3 r1 = a1*Z0;
+    Vec3 r2 = a2*Z0;
+
+    // Enforcing orthonormality using Gram-Schmidt
+    const float r1n = r1.norm();
+    if (r1n < 1e-6f) return false;
+    r1 /= r1n;
+
+    r2 = r2 - (r1.dot(r2)) * r1;
+    const float r2n = r2.norm();
+    if (r2n < 1e-6f) return false;
+    r2 /= r2n;
+
+    Vec3 r3 = r1.cross(r2);
+    const float r3n = r3.norm();
+    if (r3n < 1e-6f) return false;
+    r3 /= r3n;
+    
+    Mat3 R_C_P;
+    R_C_P.row(0) = r1.transpose();
+    R_C_P.row(1) = r2.transpose();
+    R_C_P.row(2) = r3.transpose();
+
+    // Ensure right-handed rotation (det = +1)
+    if (R_C_P.determinant() < 0.0f) {
+        R_C_P.row(2) *= -1.0f;
+    }
+
+    // Translation using az/el (your stated approach)
+    Vec3 t_PbyC;
+    t_PbyC.z() = Z0;
+    t_PbyC.x() = Z0 * std::tan(az);
+    t_PbyC.y() = - Z0 * std::tan(el) / std::cos(az);
+
+    if (!t_PbyC.allFinite()) {
+        return false;
+    }
+
+    // Output
+    pose.R = R_C_P;
+    pose.t = -t_PbyC;
+
+    return true;
+}
+
+
+bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed, Pose& pose,
                                             float az, float el,
                                             float& roll, float& pitch, float& yaw,
                                             float& range_m) const {
@@ -252,6 +405,9 @@ bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed,
         // case AlgoType::PNP_INNER:
         //     // future: pure PnP on inner pattern
         //     return estimatePosePnpInner(packed, az, el roll, pitch, yaw, range_m);
+
+        case AlgoType::ANALYTICAL_GENERIC:
+            return genericAnalyticalPose(packed, az, el, pose);
 
         default:
             // Unknown algorithm type
@@ -404,10 +560,51 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
     float yaw = 0.0f;
     float range_m = 0.0f;
 
-    if(!estimatePose(packed, az, el, roll, pitch, yaw, range_m)) {
+    Pose pose;
+    
+    if(!estimatePose(packed, pose, az, el, roll, pitch, yaw, range_m)) {
         out.valid = 0; // Mark pose as invalid
         return false;
     }
+
+    // //==============TESTING (TO BE REMOVED)======================================
+    // UNCOMMENT TO TEST GENERIC ALGORITHM
+    // Mat3 P;
+    // P <<
+    //     0, 0, 1,  // x' = z
+    //     1, 0, 0,  // y' = x
+    //     0, 1, 0;  // z' = y
+
+    // pose.R = P * pose.R * P.transpose();
+
+    // auto dcmToRpy321_passive = [](const Eigen::Matrix3f& C, float& roll, float& pitch, float& yaw)
+    // {
+    //     // pitch = asin(-c13)
+    //     float s = -C(0,2); // c13 with 0-based indexing is C(0,2)
+
+    //     // clamp for numeric safety
+    //     s = std::max(-1.0f, std::min(1.0f, s));
+    //     pitch = std::asin(s);
+
+    //     const float cp = std::cos(pitch);
+
+    //     if (std::fabs(cp) > 1e-6f) {
+    //         // roll = atan2(c23, c33)
+    //         roll = std::atan2(C(1,2), C(2,2));
+    //         // yaw  = atan2(c12, c11)
+    //         yaw  = std::atan2(C(0,1), C(0,0));
+    //     } else {
+    //         // Gimbal lock: cp ~ 0, yaw and roll coupled.
+    //         // Common choice: set roll = 0 and solve yaw from other terms.
+    //         roll = 0.0f;
+    //         yaw  = std::atan2(-C(1,0), C(1,1));
+    //     }
+    // };
+
+    // dcmToRpy321_passive(pose.R, roll, pitch, yaw);
+    // range_m = pose.t.norm();
+
+    //==============TESTING ENDS======================================
 
     // EVALUATE REPROJECTION ERROR
     float reproj_error = evaluateReprojectionError(packed, roll, pitch, yaw, range_m);

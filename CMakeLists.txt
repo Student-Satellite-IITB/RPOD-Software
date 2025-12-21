@@ -21,6 +21,7 @@ endif()
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lib/eigen
 )
 
 # ==== Source Files ====

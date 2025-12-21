@@ -120,6 +120,7 @@ int main() {
 
     // Algorithm selection + reprojection threshold
     spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_INNER;
+    //spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;
     spe_cfg.MAX_REPROJ_ERROR_PX = 600.0f;                 // from your config
 
     vbn::StaticPoseEstimator spe(spe_cfg);
