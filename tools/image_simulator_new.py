@@ -7,11 +7,11 @@ import sys
 
 # CAMERA POSE WRT TARGET PATTERN
 RANGE_M = 0.20         # Distance from camera to pattern origin (along camera
-AZIMUTH_DEG = 0.0   # Rotation around Hill Frame (+Z) camera vertical axis (+Y)
-ELEVATION_DEG = 0.0 # Rotation around Hill Frame (+Y) camera horizontal axis (+X)
-ROLL_DEG  = 0.0     # Rotation around Hill Frame x-axis, Camera z-axis
-PITCH_DEG = 0.0     # Rotation around Hill Frame y-axis, Camera x-axis
-YAW_DEG   = 10.0     # Rotation around Hill Frame z-axis, Camera y-axis
+AZIMUTH_DEG = 0.5   # Rotation around Hill Frame (+Z) camera vertical axis (+Y)
+ELEVATION_DEG = 5.0 # Rotation around Hill Frame (+Y) camera horizontal axis (+X)
+ROLL_DEG  = 1.0     # Rotation around Hill Frame x-axis, Camera z-axis
+PITCH_DEG = 2.0     # Rotation around Hill Frame y-axis, Camera x-axis
+YAW_DEG   = 5.0     # Rotation around Hill Frame z-axis, Camera y-axis
 
 # Image Resolution
 W, H = 1280, 800

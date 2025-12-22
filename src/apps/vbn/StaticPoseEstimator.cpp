@@ -357,9 +357,9 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
     }
 
     float Df = D * fx;
-    float range = (Df/x4)*(cr*cypa - sr*sypa*std::sin(pitch_plus_el));
+    float Z = (Df/x4)*(cr*cypa - sr*sypa*std::sin(pitch_plus_el));
 
-    if(range < 0.0f) {
+    if(Z < 0.0f) {
         return false;
     }    
     
@@ -376,14 +376,14 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
         cr*sp*cy + sr*sy, cr*sp*sy - sr*cy, cr*cp;
 
     Vec3 t_PbyC;
-    t_PbyC.x() = range*std::cos(el)*std::cos(az);
-    t_PbyC.y() = range*std::cos(el)*std::cos(az);
-    t_PbyC.z() = -range*std::sin(el);
+    t_PbyC.x() = Z;
+    t_PbyC.y() = Z*std::tan(az);
+    t_PbyC.z() = -Z*std::tan(el)/std::cos(az);
 
     // Change of Basis to Aerospace convention
     // Euler angles here are derived according to aerospace convention directly
     // From Pirat reference
-    t_PbyC = P_CAM2AERO*t_PbyC;
+    // Translation vector is also already in aerospace convention
 
     // Output pose
     pose.R = R_C_P;
