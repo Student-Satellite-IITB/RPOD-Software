@@ -28,11 +28,7 @@ struct PatternGeometry{
     float D = PATTERN_RADIUS;
     float H = PATTERN_OFFSET;
 
-    std::array<float, 15> P_PINV ={
-        0.0f, -1/(2*D), 0.0f, 1/(2*D), 0.0f,
-        -1/(2*D), 0.0f, 1/(2*D), 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, -1/H
-    };
+    std::array<float, 15> P_PINV ={};
 };
 
 enum class AlgoType: uint8_t{
@@ -100,23 +96,23 @@ private:
     // POSE ESTIMATION ALGORITHMS
 
     // Pose estimation dispatcher
-    bool estimatePose(const PackedLeds& packed, Pose& pose,
-                      float az, float el,
-                      float& roll, float& pitch, float& yaw,
-                      float& range_m) const;
+    bool estimatePose(const PackedLeds& packed, 
+                      float az, float el, 
+                      Pose& pose) const;
 
     // Analytical pose estimation algorithm for INNER pattern
-    bool estimatePoseAnalyticalInner(const PackedLeds& packed,
-                                     float az, float el,
-                                     float& roll, float& pitch, float& yaw,
-                                     float& range_m) const;
+    bool estimatePoseAnalyticalInner(const PackedLeds& packed, 
+                                     float az, float el, 
+                                     Pose& pose) const;
+
     // Generic Analytical Pose Estimation algorithm
-    bool genericAnalyticalPose(const PackedLeds& packed, float az, float el, Pose& pose) const;
+    bool genericAnalyticalPose(const PackedLeds& packed, 
+                               float az, float el, 
+                               Pose& pose) const;
 
     // MEASUREMENT CONFIDENCE EVALUATION
     float evaluateReprojectionError(const PackedLeds& packed,
-                                   float roll, float pitch, float yaw,
-                                   float range_m);
+                                    const Pose& pose);
 
 
 };

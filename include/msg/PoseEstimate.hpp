@@ -10,17 +10,17 @@ namespace msg {
 struct PoseEstimate {
   uint64_t t_exp_end_us;   // Exposure-end timestamp (µs) of the source image.
 
-  // Pose of docking target LED Pattern P expressed in the camera frame C (H_P/C).
-  float q_PbyC[4];   // Unit quaternion (w,x,y,z). Orientation of P relative to C.
-                     // Convention: rotates vectors from P into C (v_C = R(q)*v_P).
-  float t_PbyC[3];   // Translation of the origin of P expressed in C: [x,y,z] (m).
+  // Pose of Camera frame C wrt Pattern frame P (H_C/P).
+  float q_C_P[4];   // Unit quaternion (w,x,y,z). Orientation of C relative to P.
+  float R_C_P[9];   // DCM representing frame transformation from P frame to C frame
+  float t_CbyP[3];  // Translation vector of the Camera frame origin wrt to Pattern frame origin
 
   float az;     // Line-of-sight azimuth angle to pattern center (radians).
   float el;     // Line-of-sight elevation angle to pattern center (radians).
   float roll;   // Roll angle of pattern P in radians.
   float pitch;  // Pitch angle of pattern P in radians.
   float yaw;    // Yaw angle of pattern P in radians.
-  float range_m; // Range from camera C to pattern P along camera Z axis (m
+  float range_m; // Range from camera C to pattern P along camera Z axis (m)
   
   // --- Traceability---
   PatternId pattern_id;  // PatternId enum of the observed pattern (INNER/OUTER).

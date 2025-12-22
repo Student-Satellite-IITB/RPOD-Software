@@ -9,13 +9,22 @@ namespace {
     using Vec2 = Eigen::Vector2f;
     using Vec3 = Eigen::Vector3f;
     using Mat3 = Eigen::Matrix3f;
+
+    // Change of Basis Axis Definition
+    // from Camera to Aerospace Convention
+    // For DCM P*R*P.T for vectors P*t
+    static const Mat3 P_CAM2AERO = (Mat3() <<
+        0.f, 0.f, 1.f,
+        1.f, 0.f, 0.f,
+        0.f, 1.f, 0.f
+    ).finished();
 }
 
 namespace vbn
 {
     struct Pose{
-        Mat3 R = Mat3::Identity();
-        Vec3 t = Vec3::Zero();
+        Mat3 R = Mat3::Identity(); // Pattern to Camera Frame Transformation
+        Vec3 t = Vec3::Zero(); // Vector from Pattern Origin to Camera Origin
     };
 } // namespace vbn
 
@@ -55,6 +64,93 @@ static inline StaticPoseEstimatorConfig sanitise(const StaticPoseEstimatorConfig
 
     return cfg;
 }
+
+// Attitude Parametrisation
+static inline void DCM2Euler321(const Mat3& C, float& roll, float& pitch, float& yaw){
+    // Frame transformation
+    // 3-2-1 Passive Sequence
+
+    // pitch = asin(-c13)
+    float s = -C(0,2); // c13 with 0-based indexing is C(0,2)
+
+    // clamp for numeric safety
+    s = std::max(-1.0f, std::min(1.0f, s));
+    pitch = std::asin(s);
+
+    const float cp = std::cos(pitch);
+
+    if (std::fabs(cp) > 1e-6f) {
+        // roll = atan2(c23, c33)
+        roll = std::atan2(C(1,2), C(2,2));
+        // yaw  = atan2(c12, c11)
+        yaw  = std::atan2(C(0,1), C(0,0));
+    } else {
+        // Gimbal lock: cp ~ 0, yaw and roll coupled.
+        // Common choice: set roll = 0 and solve yaw from other terms.
+        roll = 0.0f;
+        yaw  = std::atan2(-C(1,0), C(1,1));
+    }
+}
+
+static inline void DCM2Quat_0123(const Mat3&R, float q[4]){
+    // Sheppard's Method
+    // Robust implementation as compared to direct DCM2Quat
+    // Output quaternion (scalar-first):
+    // q[0]=q0, q[1]=q1, q[2]=q2, q[3]=q3
+
+    float q0, q1, q2, q3;
+
+    const float tr = R(0,0) + R(1,1) + R(2,2);
+
+    if (tr > 0.0f) {
+    const float S = std::sqrt(tr + 1.0f) * 2.0f; // S = 4*q0
+    q0 = 0.25f * S;
+    q1 = (R(1,2) - R(2,1)) / S;
+    q2 = (R(2,0) - R(0,2)) / S;
+    q3 = (R(0,1) - R(1,0)) / S;
+
+    } else if (R(0,0) > R(1,1) && R(0,0) > R(2,2)) {
+        const float S = std::sqrt(1.0f + 2*R(0,0) - tr) * 2.0f; // S = 4*q1
+        q0 = (R(1,2) - R(2,1)) / S;
+        q1 = 0.25f * S;
+        q2 = (R(0,1) + R(1,0)) / S;
+        q3 = (R(0,2) + R(2,0)) / S;
+
+    } else if (R(1,1) > R(2,2)) {
+        const float S = std::sqrt(1.0f + 2*R(1,1) - tr) * 2.0f; // S = 4*q2
+        q0 = (R(2,0) - R(0,2)) / S;
+        q1 = (R(0,1) + R(1,0)) / S;
+        q2 = 0.25f * S;
+        q3 = (R(1,2) + R(2,1)) / S;
+
+    } else {
+        const float S = std::sqrt(1.0f + 2*R(2,2) - tr) * 2.0f; // S = 4*q3
+        q0 = (R(0,1) - R(1,0)) / S;
+        q1 = (R(0,2) + R(2,0)) / S;
+        q2 = (R(1,2) + R(2,1)) / S;
+        q3 = 0.25f * S;
+    }
+
+    // Normalize (good practice if R is slightly non-orthonormal numerically)
+    const float n = std::sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
+    if (n > 1e-12f) {
+        q0 /= n;
+        q1 /= n; 
+        q2 /= n; 
+        q3 /= n;
+    } else {
+        q0 = 1.0f; 
+        q1 = 0.0f; 
+        q2 = 0.0f; 
+        q3 = 0.0f;
+    }
+
+    // Enforcing + q0 Shorter rotation convention
+    if (q0 < 0.0f) { q0 = -q0; q1 = -q1; q2 = -q2; q3 = -q3; }
+
+    q[0] = q0; q[1] = q1; q[2] = q2; q[3] = q3;
+}
+
 } // namespace vbn
 
 // IMPLEMENTATION
@@ -177,9 +273,8 @@ bool vbn::StaticPoseEstimator::computeLosAngles(const PackedLeds& packed,
 // ===================================
 
 bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& packed,
-                                 float az, float el,
-                                 float& roll, float& pitch, float& yaw,
-                                 float& range_m) const{
+                                                           float az, float el,
+                                                           Pose& pose) const{
     // Assumptions:
     // Central LED offset = pattern radius (D)
     // inner_count == 5, slots: 0:TOP,1:LEFT,2:BOTTOM,3:RIGHT,4:CENTER,
@@ -227,29 +322,29 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
     }
 
     // Roll computation
-    float alpha = std::atan2(-y4, y3);
-    float ca = std::cos(alpha);
-    float sa = std::sin(alpha);
+    float roll = std::atan2(-y4, y3);
+    float cr = std::cos(roll);
+    float sr = std::sin(roll);
 
     // Yaw compqutation
-    float arg_gamma = (-x5/y1) * ca;
-    float gamma_plus_az = safeAsin(arg_gamma);
-    float gamma = gamma_plus_az - az;
+    float arg_yaw = (-x5/y1) * cr;
+    float yaw_plus_az = safeAsin(arg_yaw);
+    float yaw = yaw_plus_az - az;
 
     // Pitch computation
-    float cgpa = std::cos(gamma_plus_az);
-    float sgpa = std::sin(gamma_plus_az);
+    float cypa = std::cos(yaw_plus_az);
+    float sypa = std::sin(yaw_plus_az);
 
-    float num_b = cgpa * ca;
-    float den_b = sgpa * sa + (x2/y5);
+    float num_b = cypa * cr;
+    float den_b = sypa * sr + (x2/y5);
 
     if (std::fabs(den_b) < 1e-9f) {
         return false;
     }
 
-    float arg_beta = num_b / den_b;
-    float beta_plus_el = safeAsin(arg_beta);
-    float beta = beta_plus_el - el;
+    float arg_pitch = num_b / den_b;
+    float pitch_plus_el = safeAsin(arg_pitch);
+    float pitch = pitch_plus_el - el;
 
     // Range computation
     const auto& cam  = m_cfg.CAM_INTRINSICS;
@@ -262,18 +357,37 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
     }
 
     float Df = D * fx;
-    float range = (Df/x4)*(ca*cgpa - sa*sgpa*std::sin(beta_plus_el));
+    float range = (Df/x4)*(cr*cypa - sr*sypa*std::sin(pitch_plus_el));
 
     if(range < 0.0f) {
         return false;
-    }
+    }    
+    
+    float cp = std::cos(pitch);
+    float sp = std::sin(pitch);
 
-    // Map α,β,γ to roll,pitch,yaw in your chosen convention.
-    // Here we take α=roll, β=pitch, γ=yaw (1-2-3 sequence in camera frame).
-    roll  = alpha;
-    pitch = beta;
-    yaw   = gamma;
-    range_m = range;
+    float cy = std::cos(yaw);
+    float sy = std::sin(yaw);
+
+    Mat3 R_C_P;
+    R_C_P << 
+        cp*cy, cp*sy, -sp,
+        sr*sp*cy - cr*sy, sr*sp*sy + cr*cy, sr*cp,
+        cr*sp*cy + sr*sy, cr*sp*sy - sr*cy, cr*cp;
+
+    Vec3 t_PbyC;
+    t_PbyC.x() = range*std::cos(el)*std::cos(az);
+    t_PbyC.y() = range*std::cos(el)*std::cos(az);
+    t_PbyC.z() = -range*std::sin(el);
+
+    // Change of Basis to Aerospace convention
+    // Euler angles here are derived according to aerospace convention directly
+    // From Pirat reference
+    t_PbyC = P_CAM2AERO*t_PbyC;
+
+    // Output pose
+    pose.R = R_C_P;
+    pose.t = -t_PbyC;
 
     return true;
 }
@@ -328,63 +442,126 @@ bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, f
         return false;
     }
 
-    // Estimate scale
-    const float s1 = a1.norm();
-    const float s2 = a2.norm();
-    const float s  = 0.5f * (s1 + s2);
-
-    if (!(std::isfinite(s) && s > 1e-6f)) {
-        return false;
-    }
-
-    const float Z0 = 1.0f / s;
-
-    if (!(std::isfinite(Z0) && Z0 > 0.0f)) {
-        return false;
-    }
-
-    // a1 = 1/Zo(r1 - x_c*r3)
-    // a2 = 1/Zo(r2 - y_c*r3)
-
-    Vec3 r1 = a1*Z0;
-    Vec3 r2 = a2*Z0;
-
-    // Enforcing orthonormality using Gram-Schmidt
-    const float r1n = r1.norm();
-    if (r1n < 1e-6f) return false;
-    r1 /= r1n;
-
-    r2 = r2 - (r1.dot(r2)) * r1;
-    const float r2n = r2.norm();
-    if (r2n < 1e-6f) return false;
-    r2 /= r2n;
-
-    Vec3 r3 = r1.cross(r2);
-    const float r3n = r3.norm();
-    if (r3n < 1e-6f) return false;
-    r3 /= r3n;
+    const float a1n = a1.norm();
+    const float a2n = a2.norm();
     
-    Mat3 R_C_P;
-    R_C_P.row(0) = r1.transpose();
-    R_C_P.row(1) = r2.transpose();
-    R_C_P.row(2) = r3.transpose();
+    if (!(std::isfinite(a1n) && std::isfinite(a2n) && a1n > 1e-8f && a2n > 1e-8f)) return false;
 
-    // Ensure right-handed rotation (det = +1)
-    if (R_C_P.determinant() < 0.0f) {
-        R_C_P.row(2) *= -1.0f;
+    // === Recover Z0 using known norms:
+    // ||b1||^2 = ||r1 - x_c r3||^2 = 1 + x_c^2
+    // ||b2||^2 = 1 + y_c^2
+    // and b1 = Z0*a1, b2 = Z0*a2
+    const float Z01 = std::sqrt((1.0f + x_c*x_c) / (a1n*a1n));
+    const float Z02 = std::sqrt((1.0f + y_c*y_c) / (a2n*a2n));
+    if (!(std::isfinite(Z01) && std::isfinite(Z02) && Z01 > 0.0f && Z02 > 0.0f)) return false;
+
+    const float Z0 = 0.5f * (Z01 + Z02);
+    if (!(std::isfinite(Z0) && Z0 > 0.0f)) return false;
+
+    // Unscale b1,b2
+    const Vec3 b1 = Z0 * a1;
+    const Vec3 b2 = Z0 * a2;
+
+    // === Solve for r3 from:
+    // b1·r3 = -x_c
+    // b2·r3 = -y_c
+    // ||r3|| = 1
+    //
+    // Particular solution: r3_0 = B^T (B B^T)^-1 d
+    // where B=[b1^T; b2^T], d=[-x_c; -y_c]
+    const float bb11 = b1.dot(b1);
+    const float bb22 = b2.dot(b2);
+    const float bb12 = b1.dot(b2);
+
+    // BBt = [[bb11, bb12],[bb12, bb22]]
+    const float detBBt = bb11*bb22 - bb12*bb12;
+    if (!(std::isfinite(detBBt) && std::fabs(detBBt) > 1e-10f)) return false;
+
+    const float inv00 =  bb22 / detBBt;
+    const float inv01 = -bb12 / detBBt;
+    const float inv10 = -bb12 / detBBt;
+    const float inv11 =  bb11 / detBBt;
+
+    const float d0 = -x_c;
+    const float d1 = -y_c;
+
+    // w = (BBt)^-1 d
+    const float w0 = inv00*d0 + inv01*d1;
+    const float w1 = inv10*d0 + inv11*d1;
+
+    const Vec3 r3_0 = b1*w0 + b2*w1;
+
+    // Null direction
+    Vec3 n = b1.cross(b2);
+    const float nn = n.norm();
+    if (!(std::isfinite(nn) && nn > 1e-8f)) return false;
+    n /= nn;
+
+    // r3 = r3_0 ± alpha n, alpha = sqrt(1 - ||r3_0||^2)
+    const float r30n2 = r3_0.squaredNorm();
+    float alpha2 = 1.0f - r30n2;
+    if (alpha2 < -1e-5f) return false;         // inconsistent due to noise/assumption violation
+    if (alpha2 < 0.0f) alpha2 = 0.0f;          // clamp small negative
+    const float alpha = std::sqrt(alpha2);
+
+    auto buildR = [&](const Vec3& r3_in, Mat3& Rcp_out) -> bool {
+        Vec3 r1 = b1 + x_c * r3_in;
+        Vec3 r2 = b2 + y_c * r3_in;
+
+        // Gram–Schmidt SO(3) enforcement
+        float r1n = r1.norm();
+        if (r1n < 1e-8f) return false;
+        r1 /= r1n;
+
+        r2 = r2 - (r1.dot(r2)) * r1;
+        float r2n = r2.norm();
+        if (r2n < 1e-8f) return false;
+        r2 /= r2n;
+
+        Vec3 r3 = r1.cross(r2);
+        float r3n = r3.norm();
+        if (r3n < 1e-8f) return false;
+        r3 /= r3n;
+
+        Rcp_out.row(0) = r1.transpose();
+        Rcp_out.row(1) = r2.transpose();
+        Rcp_out.row(2) = r3.transpose();
+
+        if (Rcp_out.determinant() < 0.0f) {
+            Rcp_out.row(2) *= -1.0f;
+        }
+        return Rcp_out.allFinite();
+    };
+
+    Mat3 Rcp_plus, Rcp_minus;
+    const Vec3 r3_plus  = r3_0 + alpha * n;
+    const Vec3 r3_minus = r3_0 - alpha * n;
+
+    const bool ok_plus  = buildR(r3_plus,  Rcp_plus);
+    const bool ok_minus = buildR(r3_minus, Rcp_minus);
+    if (!ok_plus && !ok_minus) return false;
+
+    // Choose sign: simplest heuristic → pick the one with r3.z > 0 if that matches your camera forward
+    Mat3 R_C_P = ok_plus ? Rcp_plus : Rcp_minus;
+    if (ok_plus && ok_minus) {
+        // Prefer the solution whose r3 points roughly along +Zc
+        if (Rcp_minus(2,2) > Rcp_plus(2,2)) R_C_P = Rcp_minus;
     }
 
-    // Translation using az/el (your stated approach)
+    // Translation: use center bearing directly
+    // t = [tx, ty, tz], with x_c=tx/tz, y_c=ty/tz
     Vec3 t_PbyC;
     t_PbyC.z() = Z0;
-    t_PbyC.x() = Z0 * std::tan(az);
-    t_PbyC.y() = - Z0 * std::tan(el) / std::cos(az);
+    t_PbyC.x() = x_c * Z0;
+    t_PbyC.y() = y_c * Z0;
 
-    if (!t_PbyC.allFinite()) {
-        return false;
-    }
+    if (!t_PbyC.allFinite()) return false;
 
-    // Output
+    // Change of basis from CAM to Aerospace Convention
+    R_C_P = P_CAM2AERO*R_C_P*P_CAM2AERO.transpose();
+    t_PbyC = P_CAM2AERO*t_PbyC;
+
+    // Output pose
     pose.R = R_C_P;
     pose.t = -t_PbyC;
 
@@ -392,14 +569,13 @@ bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, f
 }
 
 
-bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed, Pose& pose,
+bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed,
                                             float az, float el,
-                                            float& roll, float& pitch, float& yaw,
-                                            float& range_m) const {
+                                            Pose& pose) const {
 
     switch (m_cfg.ALGO) {
         case AlgoType::ANALYTICAL_INNER:
-            return estimatePoseAnalyticalInner(packed, az, el, roll, pitch, yaw, range_m);
+            return estimatePoseAnalyticalInner(packed, az, el, pose);
         
         // can be extended in future for more algorithms
         // case AlgoType::PNP_INNER:
@@ -417,116 +593,64 @@ bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed, Pose& pose
 
 }
 
-float vbn::StaticPoseEstimator::evaluateReprojectionError(const PackedLeds& packed,
-                                                   float roll, float pitch, float yaw,
-                                                   float range_m){
-    
+float vbn::StaticPoseEstimator::evaluateReprojectionError(const PackedLeds& packed, const Pose& pose){
+
+    Mat3 R_C_P = pose.R;
+    Vec3 t_PbyC = -pose.t;
+
+    // Axis transformations to camera convention
+    R_C_P = P_CAM2AERO.transpose()*R_C_P*P_CAM2AERO;
+    t_PbyC = P_CAM2AERO.transpose()*t_PbyC;
+
     const auto& cam = m_cfg.CAM_INTRINSICS;
     const auto& geom = m_cfg.PATTERN_GEOMETRY;
     const float fx = cam.fx;
     const float fy = cam.fy;
     const float D = geom.PATTERN_RADIUS;
-
-    const msg::Led2D& T = packed.inner[0];
-    const msg::Led2D& L = packed.inner[1];
-    const msg::Led2D& B = packed.inner[2];
-    const msg::Led2D& R = packed.inner[3];
-    const msg::Led2D& C = packed.inner[4];
-
-    const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
-    const float v_c = 0.25f * (T.v_px + L.v_px + B.v_px + R.v_px);
-
-    float x_n = u_c / fx;
-    float y_n = v_c / fy;
-    float z_n = 1.0f;
-
-    float norm = std::sqrt(x_n * x_n + y_n * y_n + z_n * z_n);
-    if (norm < 1e-9f) {
-        return 1e9f; // Large error for degenerate case
-    }
-
-    float dir_x = x_n / norm;
-    float dir_y = y_n / norm;
-    float dir_z = z_n / norm;
-
-    // Translation: pattern origin in camera frame
-    float t_x = range_m * dir_x;
-    float t_y = range_m * dir_y;
-    float t_z = range_m * dir_z;
-
-    // Rotation matrix R_cam_pat from roll, pitch, yaw (1-2-3)
-    const float cr = std::cos(roll);
-    const float sr = std::sin(roll);
-    const float cp = std::cos(pitch);
-    const float sp = std::sin(pitch);
-    const float cy = std::cos(yaw);
-    const float sy = std::sin(yaw);
-
-    // R = Rz(yaw) * Ry(pitch) * Rx(roll)
-    float R00 = cy * cp;
-    float R01 = cy * sp * sr - sy * cr;
-    float R02 = cy * sp * cr + sy * sr;
-
-    float R10 = sy * cp;
-    float R11 = sy * sp * sr + cy * cr;
-    float R12 = sy * sp * cr - cy * sr;
-
-    float R20 = -sp;
-    float R21 = cp * sr;
-    float R22 = cp * cr;
+    const float H = geom.PATTERN_OFFSET;
 
     // Inner Pattern Geometry in Pattern Frame
     // Pattern Frame Definition:
     // +X right, +Y down, +Z inwards of pattern plane (+V bar)
-
-    struct PatLed {
-        float x;
-        float y;
-        float z;
+    
+    const std::array<Vec3, 5> P_pat = {
+        Vec3( 0.0f, -D,   0.0f),  // TOP
+        Vec3(-D,    0.0f, 0.0f),  // LEFT
+        Vec3( 0.0f,  D,   0.0f),  // BOTTOM
+        Vec3( D,    0.0f, 0.0f),  // RIGHT
+        Vec3( 0.0f, 0.0f, -H)     // CENTER (towards camera)
+        // If using H: Vec3(0,0,-H)
     };
 
-    PatLed pat_leds[5] = {
-        {0.0f,  -D, 0.0f},   // TOP
-        {-D, 0.0f, 0.0f},   // LEFT
-        {0.0f, D, 0.0f},   // BOTTOM
-        { D, 0.0f, 0.0f},    // RIGHT
-        {0.0f,0.0f, -D}    // CENTER (offset towards camera, assuming H = D)
-    };
+    Vec3 P_cam;
 
     float sum_sq_error = 0.0f;
-    float RMS_error = 0.0f;
     int count = 0;
 
     for(int i = 0; i < 5; ++i) {
-        const PatLed& p_led = pat_leds[i];
 
-        // Transform to camera frame: P_cam = R * P_pat + t
-        float Xc = R00 * p_led.x + R01 * p_led.y + R02 * p_led.z + t_x;
-        float Yc = R10 * p_led.x + R11 * p_led.y + R12 * p_led.z + t_y;
-        float Zc = R20 * p_led.x + R21 * p_led.y + R22 * p_led.z + t_z;
+        // Imaging geometry
+        P_cam = R_C_P*P_pat[i] + t_PbyC;
 
-        if (Zc < 1e-9f) {
-            return 1e9f; // Large error for degenerate case
-        }
+        float Z = P_cam.z();
+        if (Z <= 1e-9f) return 1e9f;
 
         // Project to image plane (PPF)
-        float u_proj = (fx * Xc) / Zc;
-        float v_proj = (fy * Yc) / Zc;
+        float u_proj = fx * (P_cam.x() / Z);
+        float v_proj = fy * (P_cam.y() / Z);
 
         // Corresponding observed LED
-        const msg::Led2D& obs_led = packed.inner[i];
+        const auto& obs_led = packed.inner[i];
 
         // Reprojection error
         float du = obs_led.u_px - u_proj;
         float dv = obs_led.v_px - v_proj;
-        float error = std::sqrt(du * du + dv * dv);
 
-        sum_sq_error += error*error;
+        sum_sq_error += du*du + dv*dv;
         ++count;
     }  
     
-    RMS_error = std::sqrt(sum_sq_error / count);
-
+    float RMS_error = std::sqrt(sum_sq_error / count);
     return RMS_error;
 }
 
@@ -562,52 +686,16 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
 
     Pose pose;
     
-    if(!estimatePose(packed, pose, az, el, roll, pitch, yaw, range_m)) {
+    if(!estimatePose(packed, az, el, pose)) {
         out.valid = 0; // Mark pose as invalid
         return false;
     }
 
-    // //==============TESTING (TO BE REMOVED)======================================
-    // UNCOMMENT TO TEST GENERIC ALGORITHM
-    // Mat3 P;
-    // P <<
-    //     0, 0, 1,  // x' = z
-    //     1, 0, 0,  // y' = x
-    //     0, 1, 0;  // z' = y
-
-    // pose.R = P * pose.R * P.transpose();
-
-    // auto dcmToRpy321_passive = [](const Eigen::Matrix3f& C, float& roll, float& pitch, float& yaw)
-    // {
-    //     // pitch = asin(-c13)
-    //     float s = -C(0,2); // c13 with 0-based indexing is C(0,2)
-
-    //     // clamp for numeric safety
-    //     s = std::max(-1.0f, std::min(1.0f, s));
-    //     pitch = std::asin(s);
-
-    //     const float cp = std::cos(pitch);
-
-    //     if (std::fabs(cp) > 1e-6f) {
-    //         // roll = atan2(c23, c33)
-    //         roll = std::atan2(C(1,2), C(2,2));
-    //         // yaw  = atan2(c12, c11)
-    //         yaw  = std::atan2(C(0,1), C(0,0));
-    //     } else {
-    //         // Gimbal lock: cp ~ 0, yaw and roll coupled.
-    //         // Common choice: set roll = 0 and solve yaw from other terms.
-    //         roll = 0.0f;
-    //         yaw  = std::atan2(-C(1,0), C(1,1));
-    //     }
-    // };
-
-    // dcmToRpy321_passive(pose.R, roll, pitch, yaw);
-    // range_m = pose.t.norm();
-
-    //==============TESTING ENDS======================================
+    DCM2Euler321(pose.R, roll, pitch, yaw);
+    range_m = pose.t.norm();
 
     // EVALUATE REPROJECTION ERROR
-    float reproj_error = evaluateReprojectionError(packed, roll, pitch, yaw, range_m);
+    float reproj_error = evaluateReprojectionError(packed, pose);
 
     if (reproj_error > m_cfg.MAX_REPROJ_ERROR_PX) {
         out.valid = 0; // Mark pose as invalid
@@ -616,20 +704,28 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
 
     // POPULATE OUTPUT POSE ESTIMATE
 
-    // Need to convert roll, pitch, yaw, range_m into quaternion and translation vector
-    // Quaternion from roll, pitch, yaw (1-2-3 sequence)
-    // Will do this in V2; for now, set a placeholder quaternion
+    const Mat3 R_C_P = pose.R;
+    float q_C_P[4] = {1,0,0,0};
+
+    // DCM to Quaternion conversion
+    DCM2Quat_0123(R_C_P, q_C_P);
+    out.q_C_P[0] = q_C_P[0];
+    out.q_C_P[1] = q_C_P[1];
+    out.q_C_P[2] = q_C_P[2];
+    out.q_C_P[3] = q_C_P[3];
     
-    // Placeholder quaternion: identity (w,x,y,z)
-    out.q_PbyC[0] = 1.0f;
-    out.q_PbyC[1] = 0.0f;
-    out.q_PbyC[2] = 0.0f;
-    out.q_PbyC[3] = 0.0f;
+    // row-major pack
+    int k = 0;
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            out.R_C_P[k++] = R_C_P(r,c);
+        }
+    }
 
     // Placeholder translation: along camera Z only
-    out.t_PbyC[0] = 0.0f;
-    out.t_PbyC[1] = 0.0f;
-    out.t_PbyC[2] = range_m;
+    out.t_CbyP[0] = pose.t.x();
+    out.t_CbyP[1] = pose.t.y();
+    out.t_CbyP[2] = pose.t.z();
 
     out.az = az;
     out.el = el;

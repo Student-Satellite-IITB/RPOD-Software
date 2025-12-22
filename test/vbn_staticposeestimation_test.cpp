@@ -119,8 +119,8 @@ int main() {
     spe_cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.010f;   // H = D for analytic v1
 
     // Algorithm selection + reprojection threshold
-    spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_INNER;
-    //spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;
+    //spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_INNER;
+    spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;
     spe_cfg.MAX_REPROJ_ERROR_PX = 600.0f;                 // from your config
 
     vbn::StaticPoseEstimator spe(spe_cfg);
@@ -137,6 +137,7 @@ int main() {
     if (!spe_ok || pose.valid == 0) {
         std::cerr << "[SPE] Pose estimation FAILED or marked invalid.\n";
     } else {
+        auto q = pose.q_C_P;
         double roll_deg  = pose.roll  * RAD2DEG;
         double pitch_deg = pose.pitch * RAD2DEG;
         double yaw_deg   = pose.yaw   * RAD2DEG;
@@ -151,6 +152,7 @@ int main() {
         std::cout << "      Pitch = " << pitch_deg << " deg\n";
         std::cout << "      Yaw   = " << yaw_deg   << " deg\n";
         std::cout << "      Range = " << range_cm  << " cm\n";
+        std::cout << "      Quaternion = [ "<< q[0] << ", " << q[1] << ", " << q[2] << ", " << q[3] <<"]\n";
         std::cout << "      Reproj RMS = " << pose.reproj_rms_px << " px\n";
     }
 

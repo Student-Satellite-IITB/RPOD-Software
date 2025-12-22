@@ -48,7 +48,16 @@ el_sweep = [
     (0.50, 0,10, 0,0,0),  
 ]
 
-for c in el_sweep:
+az_sweep = [
+    (0.50, 0,0, 0,0,0),
+    (0.50, 2,0, 0,0,0),
+    (0.50, 5,0, 0,0,0),
+    (0.50, 7,0, 0,0,0),
+    (0.50, 10,0, 0,0,0),  
+]
+
+
+for c in az_sweep:
     subprocess.run(SIM + [str(x) for x in c], check=True)  # overwrites tools/frame_preview.png
     subprocess.run(VBN, check=True, cwd="build")
     print("----")
