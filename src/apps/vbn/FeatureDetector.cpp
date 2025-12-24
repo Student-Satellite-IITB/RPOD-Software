@@ -8,7 +8,8 @@ namespace vbn {
 static inline FeatureDetectorConfig sanitise(const FeatureDetectorConfig& in) {
     FeatureDetectorConfig cfg = in;
 
-    if (cfg.BIN_THRESH > 255) cfg.BIN_THRESH = 255;
+    // Clamp currently removed to first get comfortable with 16 bit containers with 10 bit depth
+    //if (cfg.BIN_THRESH > 255) cfg.BIN_THRESH = 255;
 
     if (cfg.MIN_BLOB_AREA < 1) cfg.MIN_BLOB_AREA = 1;
     if (cfg.MAX_BLOB_AREA < cfg.MIN_BLOB_AREA)
@@ -114,9 +115,26 @@ void vbn::FeatureDetector::defineROI(const msg::ImageFrame& img) {
 std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobArray& blobs){
     
     const uint8_t* data = img.data;
-    const int stride = static_cast<int>(img.stride);
+    const uint32_t stride = img.stride; // bytes per row
 
-    const uint8_t thresh = m_cfg.BIN_THRESH;
+    const uint16_t thresh = m_cfg.BIN_THRESH;
+
+    // Helper: read pixel DN at (u,v) in native units (supports 8-bit and 16-bit containers)
+    auto read_dn = [&](int u, int v) -> uint16_t
+    {
+        const uint8_t* row = data + v * stride; // row start in bytes
+        if (img.bytes_per_px == 1) {
+            return static_cast<uint16_t>(row[u]);
+        } else {
+            // bytes_per_px == 2 (e.g. RAW10/RAW12/GRAY16 stored in 16-bit container)
+            const uint16_t* row16 = reinterpret_cast<const uint16_t*>(row);
+            return row16[u];
+            // We read the full 16-bit sample as stored.
+            // Note: For RAW10/RAW12 unpacked into uint16_t, meaningful bits may be LSB-aligned (0..1023/4095)
+            // or MSB-aligned (shifted up). This function does not mask/shift; thresholds must match the stored DN scale.
+
+        }
+    };
 
     // 8-connected neighbors
     const int du[8] = {-1, 0, 1, 1, 1, 0, -1, -1};
@@ -144,7 +162,7 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
     for (int v = m_roi_v_min; v <= m_roi_v_max; ++v) {
         for (int u = m_roi_u_min; u <= m_roi_u_max; ++u) {         
             
-            const uint8_t pixel_val = data[v * stride + u];
+            const uint16_t pixel_val = read_dn(u, v);
 
             if (pixel_val < thresh || visited[v][u]) {
                 continue;
@@ -180,13 +198,16 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
                 Pix p = stack[--sp]; //pop pixel from stack
                 const int pu = p.u;
                 const int pv = p.v;
-                const uint8_t p_val = data[pv * stride + pu];
+                const uint16_t p_val = read_dn(pu, pv);
 
                 // Accumulate blob properties
                 // Weighter coordinates used for centroid calculation after flood-filling
-                B.u_cx += static_cast<float>(pu)*std::pow(static_cast<float>(p_val),2);
-                B.v_cx += static_cast<float>(pv)*std::pow(static_cast<float>(p_val),2);
-                B.intensity += std::pow(static_cast<float>(p_val),2);
+                const float w  = static_cast<float>(p_val);
+                const float w2 = w * w; // same as pow(w,2) but faster/clearer
+
+                B.u_cx += static_cast<float>(pu) * w2;
+                B.v_cx += static_cast<float>(pv) * w2;
+                B.intensity += w2;
                 B.area += 1;
 
                 // Explore 8-connected neighbors
@@ -205,7 +226,7 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
                         continue;
                     }
 
-                    const uint8_t n_val = data[nv * stride + nu];
+                    const uint16_t n_val = read_dn(nu, nv);
 
                     // Check if neighbour is above threshold
                     if (n_val < thresh){
@@ -526,6 +547,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
 
         L.u_px       = B.u_cx;
         L.v_px       = B.v_cx;
+        L.area       = B.area;
         L.strength   = B.intensity / (255.0f * B.area + 1e-6f);
         L.pattern_id = msg::PatternId::INNER;
         L.slot_id    = static_cast<uint8_t>(s);  // TOP/LEFT/BOTTOM/RIGHT/CENTER

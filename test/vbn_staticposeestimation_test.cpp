@@ -6,35 +6,92 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip> // for std::setprecision
+#include <fstream>
+#include <string>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 constexpr double RAD2DEG = 180.0 / M_PI;
 
-int main() {
+int main(int argc, char** argv) {
+    // -----------------------------
+    // Usage:
+    //   ./vbn_staticposeestimation_test <case_dir>
+    //
+    // Example:
+    //   ./vbn_staticposeestimation_test ../tools/data/cases/sim/tmp_case
+    // -----------------------------
 
-    // Choose a base name once
-    std::string base = "../tools/frame_actual";
+    fs::path case_dir = (argc >= 2) ? fs::path(argv[1]) : fs::path("../tools/data/cases/sim/tmp_case");
 
-    // Build input and output filenames from it
-    std::string input_path  = base + ".png";
-    std::string output_path = base + "_annotated_spe.jpg";
+    fs::path input_path   = case_dir / "image.png";
+    fs::path output_path  = case_dir / "image_annotated_spe.jpg";
+    fs::path results_path = case_dir / "results.txt";
 
-    // 1) Load test image
-    cv::Mat img = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
+    std::string case_id = case_dir.filename().string();
+    if (case_id.empty()) case_id = "CASE_UNKNOWN";
+
+    // -----------------------------
+    // 1) Load test image (keep container: 8-bit or 16-bit)
+    // -----------------------------
+    
+    //cv::Mat img = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
+    // cv::IMREAD_UNCHANGED keeps image size unchanged
+    cv::Mat img = cv::imread(input_path, cv::IMREAD_UNCHANGED);
+    
     if (img.empty()) {
-        std::cerr << "ERROR: Could not load image\n";
+        std::cerr << "ERROR: Could not load image: " << input_path.string() << "\n";
         return -1;
     }
     if (!img.isContinuous()) img = img.clone();
 
+    if (img.channels() != 1) {
+        std::cerr << "ERROR: Expected 1-channel grayscale image. Got channels=" << img.channels() << "\n";
+        return -1;
+    }
+
+    // -----------------------------
     // 2) Wrap into ImageFrame
+    // -----------------------------
+
     msg::ImageFrame input;
     input.data   = img.data;
-    input.width  = img.cols;
-    input.height = img.rows;
-    input.stride = img.cols;
+    input.width  = static_cast<uint32_t>(img.cols);
+    input.height = static_cast<uint32_t>(img.rows);
+    input.stride = static_cast<uint32_t>(img.step);  // bytes per row
+    input.bytes_per_px = static_cast<uint8_t>(img.elemSize1()); // 1 or 2
+    input.bit_depth    = static_cast<uint8_t>(8 * img.elemSize1()); // container bit depth: 8 or 16
+
+    // -----------------------------
+    // Open results file early (so failures still log metadata)
+    // -----------------------------
+    std::ofstream rf(results_path.string());
+    if (!rf.is_open()) {
+        std::cerr << "ERROR: Could not open results file: " << results_path.string() << "\n";
+        return -1;
+    }
+
+    // Basic metadata
+    rf << "case_id = " << case_id << "\n";
+    rf << "case_dir = " << case_dir.string() << "\n";
+    rf << "input_image = " << input_path.string() << "\n";
+    rf << "opencv_type = " << img.type() << "\n";
+    rf << "channels = " << img.channels() << "\n";
+    rf << "width = " << img.cols << "\n";
+    rf << "height = " << img.rows << "\n";
+    rf << "stride_bytes = " << img.step << "\n";
+    rf << "bytes_per_px = " << static_cast<int>(input.bytes_per_px) << "\n";
+    rf << "container_bit_depth = " << static_cast<int>(input.bit_depth) << "\n";
+
+    // -----------------------------
+    // 3) Feature Detector config + run
+    // -----------------------------
 
     vbn::FeatureDetectorConfig det_cfg;
-    det_cfg.BIN_THRESH = 100; // Example: adjust threshold if needed
+    // det_cfg.BIN_THRESH = 20000; // For 16-Bit Image
+    // det_cfg.BIN_THRESH = 100; // For 8-Bit Image
+    det_cfg.BIN_THRESH = 250; // For 10-Bit Image
     det_cfg.MIN_BLOB_AREA = 50;
     det_cfg.MAX_BLOB_AREA = 20000;
     det_cfg.PATTERN_MAX_SCORE = 150.0f;
@@ -58,12 +115,40 @@ int main() {
               << "\n";
     std::cout << "[FD] detect() time = " << dt.count() / 1000.0 << " ms\n";
 
-    if (!fd_ok || features.led_count == 0) {
-        std::cerr << "[MAIN] Feature detection failed or no LEDs found. Exiting.\n";
-        return 0;
+        // Log FD results
+    rf << "\n[FD]\n";
+    rf << "fd_ok = " << (fd_ok ? 1 : 0) << "\n";
+    rf << "fd_track_state = " << (features.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
+    rf << "fd_led_count = " << static_cast<int>(features.led_count) << "\n";
+    rf << "fd_time_ms = " << dt.count() / 1000.0 << "\n";
+    rf << "fd_bin_thresh = " << det_cfg.BIN_THRESH << "\n";
+    rf << "fd_min_blob_area = " << det_cfg.MIN_BLOB_AREA << "\n";
+    rf << "fd_max_blob_area = " << det_cfg.MAX_BLOB_AREA << "\n";
+
+    for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
+        const auto& L = features.leds[i];
+        rf << "fd_led" << i << ".id = " << static_cast<int>(L.slot_id) << "\n";
+        rf << "fd_led" << i << ".u_px = " << L.u_px << "\n";
+        rf << "fd_led" << i << ".v_px = " << L.v_px << "\n";
+        rf << "fd_led" << i << ".area = " << L.area << "\n";
     }
 
-    // 4) Draw FD annotations
+    // -----------------------------
+    // 4) Draw FD annotations (KEEP your style)
+    // IMPORTANT: cvtColor(CV_16UC1 -> BGR) can be finicky, so convert to 8U only for annotation.
+    // This does NOT affect the FD/SPE input path.
+    // -----------------------------
+    cv::Mat annotated_src;
+    if (img.depth() == CV_16U) {
+        // simple visualization mapping for annotation only
+        double minv = 0, maxv = 0;
+        cv::minMaxLoc(img, &minv, &maxv);
+        if (maxv <= minv) maxv = minv + 1.0;
+        img.convertTo(annotated_src, CV_8U, 255.0 / maxv);
+    } else {
+        annotated_src = img;
+    }
+
     cv::Mat annotated;
     cv::cvtColor(img, annotated, cv::COLOR_GRAY2BGR);
 
@@ -98,12 +183,29 @@ int main() {
         );
     }
 
+    if (!fd_ok || features.led_count == 0) {
+        std::cerr << "[MAIN] Feature detection failed or no LEDs found. Exiting.\n";
+
+        // Still save annotated + results for debugging
+        cv::imwrite(output_path.string(), annotated);
+        std::cout << "Saved annotated image: " << output_path.string() << "\n";
+        std::cout << "Saved results: " << results_path.string() << "\n";
+
+        rf << "\n[SPE]\n";
+        rf << "spe_ok = 0\n";
+        rf << "spe_valid = 0\n";
+        return 0;
+    }
+
+    // -----------------------------
     // 5) Configure StaticPoseEstimator (SPE)
+    // -----------------------------
+
     vbn::StaticPoseEstimatorConfig spe_cfg;
 
     // Camera intrinsics (TODO: plug in real calibration)
-    spe_cfg.CAM_INTRINSICS.fx = 908.62425565f;                 // [px] placeholder
-    spe_cfg.CAM_INTRINSICS.fy = 908.92570486f;                 // [px] placeholder
+    spe_cfg.CAM_INTRINSICS.fx = 908.62425565f;          // [px] placeholder
+    spe_cfg.CAM_INTRINSICS.fy = 908.92570486f;          // [px] placeholder
     spe_cfg.CAM_INTRINSICS.cx = img.cols * 0.5f;        // assume principal point at image centre
     spe_cfg.CAM_INTRINSICS.cy = img.rows * 0.5f;
     // spe_cfg.CAM_INTRINSICS.cx = 643.93436085f;       
@@ -125,7 +227,7 @@ int main() {
 
     vbn::StaticPoseEstimator spe(spe_cfg);
 
-    // 6) Run StaticPoseEstimator
+    // Run StaticPoseEstimator
     msg::PoseEstimate pose{};
 
     auto t2 = std::chrono::high_resolution_clock::now();
@@ -134,10 +236,20 @@ int main() {
 
     std::chrono::duration<double, std::micro> dt1 = t3 - t2;
 
+    std::cout << "[SPE] estimate() time = " << dt1.count() / 1000.0 << " ms\n";
+
+    // Log SPE results
+    rf << "\n[SPE]\n";
+    rf << "spe_ok = " << (spe_ok ? 1 : 0) << "\n";
+    rf << "spe_valid = " << static_cast<int>(pose.valid) << "\n";
+    rf << "spe_time_ms = " << dt1.count() / 1000.0 << "\n";
+    rf << "spe_reproj_rms_px = " << pose.reproj_rms_px << "\n";
+
     if (!spe_ok || pose.valid == 0) {
         std::cerr << "[SPE] Pose estimation FAILED or marked invalid.\n";
     } else {
         auto q = pose.q_C_P;
+        auto t = pose.t_CbyP;
         double roll_deg  = pose.roll  * RAD2DEG;
         double pitch_deg = pose.pitch * RAD2DEG;
         double yaw_deg   = pose.yaw   * RAD2DEG;
@@ -154,9 +266,18 @@ int main() {
         std::cout << "      Range = " << range_cm  << " cm\n";
         std::cout << "      Quaternion = [ "<< q[0] << ", " << q[1] << ", " << q[2] << ", " << q[3] <<"]\n";
         std::cout << "      Reproj RMS = " << pose.reproj_rms_px << " px\n";
-    }
 
-    std::cout << "[SPE] estimate() time = " << dt1.count() / 1000.0 << " ms\n";
+        // Save core outputs to results.txt
+        rf << std::fixed << std::setprecision(9);
+        rf << "az_deg = " << (pose.az * RAD2DEG) << "\n";
+        rf << "el_deg = " << (pose.el * RAD2DEG) << "\n";
+        rf << "roll_deg = " << roll_deg << "\n";
+        rf << "pitch_deg = " << pitch_deg << "\n";
+        rf << "yaw_deg = " << yaw_deg << "\n";
+        rf << "range_m = " << pose.range_m << "\n";
+        rf << "q_C_P = " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << "\n";
+        rf << "t_Cbyp = " << t[0] << " " << t[1] << " " << t[2] << "\n"; 
+    }
 
     // Optional: write pose text on image
     if (spe_ok && pose.valid) {
@@ -165,12 +286,12 @@ int main() {
         double yaw_deg   = pose.yaw   * RAD2DEG;
         double range_cm  = pose.range_m * 100.0;
 
-        std::string text1 = "r,p,y[deg]=(" +
+        std::string text1 = "R, P, Y [deg]=(" +
             std::to_string(roll_deg) + "," +
             std::to_string(pitch_deg) + "," +
             std::to_string(yaw_deg) + ")";
-        std::string text2 = "range=" + std::to_string(range_cm) +
-                            " cm, RMS=" + std::to_string(pose.reproj_rms_px) + " px";
+        std::string text2 = "range = " + std::to_string(range_cm) +
+                            " cm, RMS = " + std::to_string(pose.reproj_rms_px) + " px";
 
         cv::putText(
             annotated,
@@ -197,9 +318,12 @@ int main() {
         cv::line(annotated, cv::Point(annotated.cols/2, 0), cv::Point(annotated.cols/2, annotated.rows - 1), cv::Scalar(255, 255, 255), 1); 
     }
 
-    // 7) Save annotated image
-    cv::imwrite(output_path, annotated);
-    std::cout << "Saved annotated image: " << output_path << "\n";
+    // -----------------------------
+    // 6) Save annotated image + done
+    // -----------------------------
+    cv::imwrite(output_path.string(), annotated);
+    std::cout << "Saved annotated image: " << output_path.string() << "\n";
+    std::cout << "Saved results: " << results_path.string() << "\n";
 
     return 0;
 }

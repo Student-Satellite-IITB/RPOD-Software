@@ -9,21 +9,21 @@ from datetime import datetime
 # CONFIGURATION
 
 # CAMERA POSE WRT TARGET PATTERN
-RANGE_M = 0.20         # Distance from camera to pattern origin (along camera
-AZIMUTH_DEG = 0.5   # Rotation around Hill Frame (+Z) camera vertical axis (+Y)
-ELEVATION_DEG = 5.0 # Rotation around Hill Frame (+Y) camera horizontal axis (+X)
-ROLL_DEG  = 1.0     # Rotation around Hill Frame x-axis, Camera z-axis
-PITCH_DEG = 2.0     # Rotation around Hill Frame y-axis, Camera x-axis
-YAW_DEG   = 5.0     # Rotation around Hill Frame z-axis, Camera y-axis
+RANGE_M = 0.50      # Distance from camera to pattern origin
+AZIMUTH_DEG = 0.0   # Rotation around Hill Frame (+Z) camera vertical axis (+Y)
+ELEVATION_DEG = 0.0 # Rotation around Hill Frame (+Y) camera horizontal axis (+X)
+ROLL_DEG  = 0.0     # Rotation around Hill Frame x-axis, Camera z-axis
+PITCH_DEG = 0.0     # Rotation around Hill Frame y-axis, Camera x-axis
+YAW_DEG   = 0.0     # Rotation around Hill Frame z-axis, Camera y-axis
 
-# Image Resolution
+# IMAGE RESOLUTION
 W, H = 1280, 800
-BIT_DEPTH = 16          # 8, 10, 12, ... up to 16
+BIT_DEPTH = 10          # 8, 10, 12, ... up to 16
 BLACK_DN = 0            # 0..(2^BIT_DEPTH - 1)
 
-OUT_PATH  = "tools/frame_actual.png"
-PREVIEW_PATH = "tools/frame_preview.png"
-TRUTH_PATH = "tools/frame_truth.txt"
+OUT_PATH  = "tools/data/cases/sim/tmp_case/image.png"
+PREVIEW_PATH = "tools/data/cases/sim/tmp_case/preview.png"
+TRUTH_PATH = "tools/data/cases/sim/tmp_case/truth.txt"
 
 # DEFAULTS
 BLOB_CENTER = (W//2, H//2)     # (x, y) in pixels
@@ -34,7 +34,7 @@ BLUR_SIGMA = 3             # in pixels
 
 BACKGROUND_COLOR = BLACK_DN   # Background DN value
 
-# Camera intrinsics (placeholder; replace with calibration later)
+# CAMERA INTRINSICS
 FX = 908.62425565
 FY = 908.92570486
 CX, CY = W/2, H/2
@@ -43,14 +43,14 @@ K = np.array([[FX, 0,  CX],
               [0,  0,  1]], dtype=np.float32)
 DIST = np.zeros((5,1), dtype=np.float32)
 
-# Pattern (mission-specific)
+# PATTERN (MISSION-SPECIFIC)
 PATTERN = "INNER"
 PATTERN_RADIUS_MM = 10.0 
 PATTERN_OFFSET_MM = 10.0  
 
 LED_DIAMETER_MM = 5.0
 
-BIN_THRESH_DN = 100  # should match FD det_cfg.BIN_THRESH
+BIN_THRESH_DN = 250  # should match FD det_cfg.BIN_THRESH
 LED_IDS = ["T", "L", "B", "R", "C"]  # matches make_inner_pattern_vbn() order
 
 # --- Frame / RPY convention ---
@@ -98,6 +98,15 @@ def setup_globals_from_cli():
                    help="Folder to write image.png, preview.png, truth.txt")
     p.add_argument("--case_id", default=None,
                    help="Case identifier. If not provided, auto-generated.")
+    
+    # Named pose overrides (preferred)
+    p.add_argument("--range", type=float, default=None)
+    p.add_argument("--az", type=float, default=None)
+    p.add_argument("--el", type=float, default=None)
+    p.add_argument("--roll", type=float, default=None)
+    p.add_argument("--pitch", type=float, default=None)
+    p.add_argument("--yaw", type=float, default=None)
+
     p.add_argument("pose", nargs="*", type=float,
                    help="Optional: RANGE_M AZIMUTH_DEG ELEVATION_DEG ROLL_DEG PITCH_DEG YAW_DEG")
     args = p.parse_args()
@@ -116,6 +125,15 @@ def setup_globals_from_cli():
     if len(vals) > 3: ROLL_DEG = vals[3]
     if len(vals) > 4: PITCH_DEG = vals[4]
     if len(vals) > 5: YAW_DEG = vals[5]
+
+    # Named overrides win (allow skipping specific values)
+    if args.range is not None: RANGE_M = args.range
+    if args.az is not None:  AZIMUTH_DEG = args.az
+    if args.el is not None:  ELEVATION_DEG = args.el
+    if args.roll is not None:  ROLL_DEG = args.roll
+    if args.pitch is not None: PITCH_DEG = args.pitch
+    if args.yaw is not None:   YAW_DEG = args.yaw
+
 
     # Override output paths based on case folder
     OUT_PATH = os.path.join(args.out_case_dir, "image.png")
@@ -339,10 +357,12 @@ if __name__ == "__main__":
     uv_px[:,1] += (H * 0.5)
 
      # ----- Truth pose quantities for truth.txt -----
-    dir_vec = los_dir_from_az_el(AZIMUTH_DEG, ELEVATION_DEG)          # unit LOS in camera frame
-    t_C_P_mm = (RANGE_M * 1000.0) * dir_vec                           # camera -> pattern origin, in mm (as used in projection)
-    t_P_C_m  = (-t_C_P_mm / 1000.0).astype(np.float32)                # pattern -> camera origin, in meters (what you asked to store)
-    range_m_true = float(np.linalg.norm(t_P_C_m))
+    dir_vec = los_dir_from_az_el(AZIMUTH_DEG, ELEVATION_DEG)           # unit LOS in camera frame
+    t_PbyC_mm = (RANGE_M * 1000.0) * dir_vec                           # camera -> pattern origin, in mm (as used in projection)
+    t_CbyP_m  = (-(t_PbyC_mm/1000) * dir_vec ).astype(np.float32)      # pattern -> camera origin, in meters (what you asked to store)
+    # Axis-convention change to ensure compatibility with algorithm output
+    t_CbyP_m = P_CAM_TO_AERO @ t_CbyP_m
+    range_m_true = float(np.linalg.norm(t_CbyP_m))
 
     R_aero = R_C_P_321_aero(np.deg2rad(ROLL_DEG), np.deg2rad(PITCH_DEG), np.deg2rad(YAW_DEG))
     R_cam  = P_CAM_TO_AERO.T @ R_aero @ P_CAM_TO_AERO                 # camera-basis rotation used for projection
@@ -372,7 +392,7 @@ if __name__ == "__main__":
     img_preview = make_preview_u8(img, BIT_DEPTH)
     cv2.imwrite(PREVIEW_PATH, img_preview)
 
-    write_truth_txt(TRUTH_PATH, case_id, uv_px, led_areas, R_cam, t_P_C_m,
+    write_truth_txt(TRUTH_PATH, case_id, uv_px, led_areas, R_cam, t_CbyP_m,
                     sigma_px, BLUR_SIGMA if False else 0.0)
 
     print(f"[SIM] case_id={case_id}")

@@ -39,6 +39,7 @@ enum class LedSlot : uint8_t {
 struct Led2D {
     float u_px;        // column (x) in pixels, subpixel allowed
     float v_px;        // row (y) in pixels, subpixel allowed
+    int area;          // number of pixels in LED
     float strength;    // 0..1 detector confidence (e.g., normalized peak or blob SNR)
     PatternId pattern_id; // PatternId enum as uint8_t
     uint8_t slot_id;    // cast of LedSlot for INNER; or 0..N-1 for OUTER
