@@ -4,6 +4,7 @@ This folder contains **simulator-generated VBN test cases**.
 
 Sim cases are created by:
 - `tools/sim/vbn_simulator.py`
+- `tools/sim/vbn_range_sweep.py`
 
 Each case is a folder that contains:
 - `image.png` — simulated RAW-like grayscale image (usually stored in a 16-bit container)
@@ -18,10 +19,10 @@ After running the C++ test runner on a case, the folder may also contain:
 
 1. Generate a case:
    ```bash
-   python3 tools/sim/vbn_simulator.py --out_case_dir tools/data/cases/sim/CASE_SIM_example
+   python3 tools/sim/vbn_simulator.py --out_case_dir tools/data/cases/sim/CASE_example
 2. Run the C++ test runner (example):
    ```bash
-   ./vbn_staticposeestimation_test tools/data/cases/sim/CASE_SIM_example
+   ./vbn_staticposeestimation_test tools/data/cases/sim/CASE_example
 3. Inspect
    - `truth.txt` for the ground truth
    - `results.txt` for the pipeline estimate + reprojection RMS + timings

@@ -42,6 +42,8 @@ Generates **one test case folder** containing:
 - `preview.png` (always 8-bit preview for quick viewing)
 - `truth.txt` (plain text `key = value` ground-truth + metadata)
 
+Deletes any previously generated files in the test case directory to avoid any confusion later due to old results.
+
 A “case folder” is designed to be consumed by the C++ test runner and later scored/visualized.
 
 ---

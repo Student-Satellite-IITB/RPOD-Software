@@ -275,6 +275,10 @@ int main(int argc, char** argv) {
         rf << "pitch_deg = " << pitch_deg << "\n";
         rf << "yaw_deg = " << yaw_deg << "\n";
         rf << "range_m = " << pose.range_m << "\n";
+        rf << "R_C_P_rowmajor = ";
+        for (int i = 0; i < 9; ++i) {
+            rf << pose.R_C_P[i] << (i == 8 ? '\n' : ' ');
+        }
         rf << "q_C_P = " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << "\n";
         rf << "t_Cbyp = " << t[0] << " " << t[1] << " " << t[2] << "\n"; 
     }

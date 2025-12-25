@@ -28,10 +28,10 @@ A **case folder** is the smallest unit of testing. A case folder is designed to 
 We will use a simple, human-readable case directory name.
 
 Recommended formats:
-- Simulated: `CASE_SIM_<date-time>_<tag>`
-- Hardware:   `CASE_HW_<date>_<tag>` 
+- Simulated: `CASE_<date(YYYYMMDD)-time(HHMM)>_<tag>`
+- Hardware:   `CASE_<date(YYMMDD)>_<tag>` 
 
-(e.g. `CASE_SIM_20251225-035824_10cm_Yaw3_01`)
+(e.g. `CASE_20251225-0358_10cm_Yaw3_01`)
 
 Avoid spaces. Prefer underscores.
 

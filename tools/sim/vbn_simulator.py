@@ -113,9 +113,28 @@ def setup_globals_from_cli():
 
     os.makedirs(args.out_case_dir, exist_ok=True)
 
+    # Clean previously generated artifacts in this case folder.
+    # Reason: tmp_case is used for iterative single-case runs, and stale files (e.g. results.txt)
+    # can cause confusion during debugging.
+    GENERATED_FILES = (
+        "image.png",
+        "preview.png",
+        "truth.txt",
+        "results.txt",
+        "image_annotated_spe.jpg",
+    )
+
+    for fname in GENERATED_FILES:
+        fpath = os.path.join(args.out_case_dir, fname)
+        try:
+            if os.path.isfile(fpath) or os.path.islink(fpath):
+                os.remove(fpath)
+        except OSError as e:
+            print(f"[WARN] Could not remove {fpath}: {e}")
+
     case_id = args.case_id
     if case_id is None:
-        case_id = "CASE_SIM_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        case_id = "CASE_SIM_" + datetime.now().strftime("%Y%m%d-%H%M")
 
     # Override pose globals (same order as before)
     vals = args.pose

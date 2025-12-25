@@ -30,17 +30,17 @@ After running the C++ runner on a hw case, the folder may also contain:
 ## Naming
 
 Recommended:
-- `CASE_HW_<YY-MM-DD>_<tag>`
+- `CASE_HW_<YYMMDD>_<tag>`
 
 Example:
-- `CASE_HW_25-12-25_nominal_10cm`
-- `CASE_HW_25-12-25_lowlight_gainhigh_15cm`
+- `CASE_HW_251225_nominal_10cm`
+- `CASE_HW_251225_lowlight_gainhigh_15cm`
 
 ## Suggested workflow
 
 1. Run the C++ test runner (example):
    ```bash
-   ./vbn_staticposeestimation_test tools/data/cases/hw/CASE_HW_example
+   ./vbn_staticposeestimation_test tools/data/cases/hw/CASE_example
 3. Inspect
    - `results.txt` for the pipeline estimate + reprojection RMS + timings
    - `*_annotated_*` for visual sanity checks
