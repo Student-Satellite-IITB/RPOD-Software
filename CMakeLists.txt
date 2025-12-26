@@ -69,6 +69,7 @@ if(TARGET_PLATFORM STREQUAL "linux")
     target_link_libraries(rpod_test_pipeline ${OpenCV_LIBS} pthread)
     target_link_libraries(rpod_som ${OpenCV_LIBS} pthread)
     # Link VBN test executable
+    target_link_libraries(vbn_batch_runner ${OpenCV_LIBS} pthread)
     target_link_libraries(vbn_featuredetection_test ${OpenCV_LIBS} pthread)
     target_link_libraries(vbn_featuredetection_test ${OpenCV_LIBS} pthread)
     target_link_libraries(vbn_staticposeestimation_test ${OpenCV_LIBS} pthread)

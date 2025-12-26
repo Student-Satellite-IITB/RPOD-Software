@@ -26,7 +26,7 @@ Rtos::Task StaticPoseEstimationTask;
 int main() {
     // Create tasks
     // ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
-    FeatureDetectionTask.Create("FeatureDetection", vbn::FeatureDetector::Run, nullptr);
+    // FeatureDetectionTask.Create("FeatureDetection", vbn::FeatureDetector::Run, nullptr);
 
     Rtos::SleepMs(1000);  // Allow tasks to initialize
     //commandQueue.send({0x01, {}});  // Send a dummy command to start processing

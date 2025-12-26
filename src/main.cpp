@@ -54,7 +54,6 @@ void ImageCapture(void* arg) {
     frame.width        = (uint32_t)img.cols;
     frame.height       = (uint32_t)img.rows;
     frame.stride       = (uint32_t)img.step[0];      // bytes per row
-    frame.format       = msg::PixelFormat::GRAY8;    // new field
 
     while (true) {
         // Simulate image capture by using the static image
@@ -80,7 +79,7 @@ void ImageCapture(void* arg) {
 int main() {
     // Create tasks
     ImageCaptureTask.Create("ImageCapture", ImageCapture, nullptr);
-    FeatureDetectionTask.Create("FeatureDetection", vbn::FeatureDetector::Run, nullptr);
+    // FeatureDetectionTask.Create("FeatureDetection", vbn::FeatureDetector::Run, nullptr);
     // StaticPoseEstimationTask.Create("StaticPoseEstimation", StaticPoseEstimator::Run, nullptr);
     // DynamicPoseEstimationTask.Create("DynamicPoseEstimation", DynamicPoseEstimator::Run, nullptr);
     //CommandHandlerTask.Create("CommandDataHandler", CommandDataHandler::CommandHandlerRun, nullptr);

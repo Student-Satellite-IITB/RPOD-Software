@@ -591,7 +591,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     BlobArray blobs{};
     const std::size_t num_blobs = detectBlobs(img, blobs);
 
-    std::cout << "[FeatureDetector] Detected " << num_blobs << " blobs\n";
 
     if (num_blobs <5) {
         // Less than 5 blobs found → LOST
@@ -607,7 +606,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
 
-    std::cout << "[FeatureDetector] " << num_led_blobs << " blobs after area thresholding\n";
 
     // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
     // It might be that the blobs are valid but smaller than min area
@@ -653,8 +651,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
-        
-        std::cout << "[FeatureDetector] Pattern identification failed with confidence: " << confidence << "\n";
 
         // If in TRACK state, try once more
         if(m_current_state == msg::TrackState::TRACK){
