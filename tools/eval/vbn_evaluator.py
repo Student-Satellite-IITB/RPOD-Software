@@ -134,6 +134,38 @@ def parse_quat_wxyz(d: Dict[str, str], key: str) -> Tuple[float, float, float, f
         raise ValueError(f"{key} must have 4 floats")
     return (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
 
+def pix_dist(p: Tuple[float,float], q: Tuple[float,float]) -> float:
+    return math.hypot(p[0]-q[0], p[1]-q[1])
+
+def pattern_span_px_from_truth(truth: Dict[str,str]) -> float:
+    # indices: T=0, L=1, B=2, R=3
+    T = led_truth_uv(truth, 0)
+    L = led_truth_uv(truth, 1)
+    B = led_truth_uv(truth, 2)
+    R = led_truth_uv(truth, 3)
+    lr = pix_dist(L, R)
+    tb = pix_dist(T, B)
+    return max(lr, tb)
+
+def pattern_span_px_from_res(res: Dict[str, str]) -> float:
+    """
+    Computes pattern span in px from FD detections in results.txt using:
+      span = max( ||L-R|| , ||T-B|| )
+    Assumes FD LED indices follow fixed order: T=0, L=1, B=2, R=3.
+    Returns NaN if required keys are missing.
+    """
+    try:
+        T = led_fd_uv(res, 0)
+        L = led_fd_uv(res, 1)
+        B = led_fd_uv(res, 2)
+        R = led_fd_uv(res, 3)
+    except KeyError:
+        return float("nan")
+
+    lr = pix_dist(L, R)
+    tb = pix_dist(T, B)
+    return max(lr, tb)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -184,6 +216,9 @@ def main():
         case_id_truth = truth.get("case_id", os.path.basename(cdir))
         range_m_true  = get_float(truth, "range_m_true")
 
+        # Span computed as measure of conditioning of the pattern
+        span_px_true = pattern_span_px_from_truth(truth)
+
         # -------------------------
         # FD fields + centroid error
         # -------------------------
@@ -210,6 +245,7 @@ def main():
             mean_err = sum(led_errs) / 5
             rms_err  = math.sqrt(sum(e*e for e in led_errs) / 5)
             max_err  = max(led_errs)
+
         else:
             mean_err = float("nan")
             rms_err  = float("nan")
@@ -243,6 +279,7 @@ def main():
         rows.append({
             "case_id_truth": case_id_truth,
             "range_m_true": range_m_true,
+            "span_px_true": span_px_true,
 
             "fd_ok": fd_ok,
             "fd_state": fd_state,
@@ -272,23 +309,29 @@ def main():
             f.write(",".join(str(r[k]) for k in keys) + "\n")
 
     # Plot helper
-    def plot_metric(metric_key: str, out_name: str, y_label: str, title: str, require_ok_key: str = ""):
+    def plot_metric(metric_key: str, out_name: str, y_label: str, title: str,
+                    require_ok_key: str = "", x_key: str = "range_m_true",
+                    x_label: str = "Range (m) [truth]"):
         xs, ys = [], []
         for r in rows:
             if require_ok_key and r.get(require_ok_key, 0) != 1:
                 continue
             y = r[metric_key]
+            x = r[x_key]
             if isinstance(y, float) and math.isnan(y):
                 continue
-            xs.append(r["range_m_true"])
+            if isinstance(x, float) and math.isnan(x):
+                continue
+            xs.append(x)
             ys.append(y)
+
         xy = sorted(zip(xs, ys), key=lambda t: t[0])
         xs = [a for a, _ in xy]
         ys = [b for _, b in xy]
 
         plt.figure()
         plt.plot(xs, ys, marker="o")
-        plt.xlabel("Range (m) [truth]")
+        plt.xlabel(x_label)
         plt.ylabel(y_label)
         plt.title(title)
         plt.grid(True)
@@ -296,25 +339,65 @@ def main():
         plt.savefig(p, dpi=200)
         return p
 
-    p1 = plot_metric("fd_rms_err_px", "fd_centroid_rms_err_vs_range.png",
-                     "FD centroid RMS error (px) [5 LEDs]",
-                     "FD centroiding error vs range",
-                     require_ok_key="fd_ok")
+    p1 = plot_metric(
+        "fd_rms_err_px",
+        "fd_centroid_rms_err_vs_range.png",
+        "FD centroid RMS error (px) [5 LEDs]",
+        "FD centroiding error vs range",
+        require_ok_key="fd_ok",
+        x_key="range_m_true",
+        x_label="Range (m) [truth]",
+    )
 
-    p2 = plot_metric("spe_att_err_deg", "spe_att_err_vs_range.png",
-                     "SPE attitude error (deg) [DCM/quaternion]",
-                     "SPE attitude error vs range",
-                     require_ok_key="spe_ok")
+    p2 = plot_metric(
+        "spe_att_err_deg",
+        "spe_att_err_vs_range.png",
+        "SPE attitude error (deg) [DCM/quaternion]",
+        "SPE attitude error vs range",
+        require_ok_key="spe_ok",
+        x_key="range_m_true",
+        x_label="Range (m) [truth]",
+    )
 
-    p3 = plot_metric("spe_range_err_pct", "spe_range_err_pct_vs_range.png",
-                     "SPE range error (%)",
-                     "SPE range error vs range",
-                     require_ok_key="spe_ok")
+    p3 = plot_metric(
+        "spe_range_err_pct",
+        "spe_range_err_pct_vs_range.png",
+        "SPE range error (%)",
+        "SPE range error vs range",
+        require_ok_key="spe_ok",
+        x_key="range_m_true",
+        x_label="Range (m) [truth]",
+    )
 
-    p4 = plot_metric("spe_reproj_rms_px", "spe_reproj_rms_err_vs_range.png",
-                     "SPE reprojection RMS (px)",
-                     "SPE reprojection RMS vs range",
-                     require_ok_key="spe_ok")
+    p4 = plot_metric(
+        "spe_reproj_rms_px",
+        "spe_reproj_rms_err_vs_range.png",
+        "SPE reprojection RMS (px)",
+        "SPE reprojection RMS vs range",
+        require_ok_key="spe_ok",
+        x_key="range_m_true",
+        x_label="Range (m) [truth]",
+    )
+
+    p5 = plot_metric(
+        "spe_range_err_pct",
+        "spe_range_err_pct_vs_span_true.png",
+        "SPE range error (%)",
+        "SPE range error vs pattern span",
+        require_ok_key="spe_ok",
+        x_key="span_px_true",
+        x_label="Pattern span (px) [truth, max(LR,TB)]",
+    )
+
+    p6 = plot_metric(
+        "fd_rms_err_px",
+        "fd_rms_err_px_vs_span_true.png",
+        "FD centroid RMS error (px) [5 LEDs]",
+        "FD centroid RMS error vs pattern span",
+        require_ok_key="fd_ok",
+        x_key="span_px_true",
+        x_label="Pattern span (px) [truth, max(LR,TB)]",
+    )
 
     # Summary
     summary_path = os.path.join(out_dir, "vbn_eval_summary.txt")
@@ -336,12 +419,16 @@ def main():
         f.write(f"  plot = {p2}\n")
         f.write(f"  plot = {p3}\n")
         f.write(f"  plot = {p4}\n")
+        f.write(f"  plot = {p5}\n")
+        f.write(f"  plot = {p6}\n")
 
     print(f"[OK] Wrote: {csv_path}")
     print(f"[OK] Wrote: {p1}")
     print(f"[OK] Wrote: {p2}")
     print(f"[OK] Wrote: {p3}")
     print(f"[OK] Wrote: {p4}")
+    print(f"[OK] Wrote: {p5}")
+    print(f"[OK] Wrote: {p6}")
     print(f"[OK] Wrote: {summary_path}")
 
 
