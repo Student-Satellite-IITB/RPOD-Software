@@ -39,6 +39,9 @@ int main(int argc, char** argv) {
     //cv::Mat img = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
     // cv::IMREAD_UNCHANGED keeps image size unchanged
     cv::Mat img = cv::imread(input_path, cv::IMREAD_UNCHANGED);
+
+    // Hard-coded for now based on setting in simulator
+    int BIT_DEPTH = 10;
     
     if (img.empty()) {
         std::cerr << "ERROR: Could not load image: " << input_path.string() << "\n";
@@ -61,7 +64,9 @@ int main(int argc, char** argv) {
     input.height = static_cast<uint32_t>(img.rows);
     input.stride = static_cast<uint32_t>(img.step);  // bytes per row
     input.bytes_per_px = static_cast<uint8_t>(img.elemSize1()); // 1 or 2
-    input.bit_depth    = static_cast<uint8_t>(8 * img.elemSize1()); // container bit depth: 8 or 16
+    input.bit_depth    = static_cast<uint8_t>(BIT_DEPTH); // Number of meaningful bits in each pixel sample.
+    // Examples: RAW8 -> 8, RAW10 -> 10, RAW12 -> 12, RAW16 -> 16.
+    // Note: RAW10 may be stored in 16-bit containers (bytes_per_px=2, bit_depth=10).
 
     // -----------------------------
     // Open results file early (so failures still log metadata)
