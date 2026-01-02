@@ -20,6 +20,8 @@ YAW_DEG   = 0.0     # Rotation around Hill Frame z-axis, Camera y-axis
 W, H = 1280, 800
 BIT_DEPTH = 10          # 8, 10, 12, ... up to 16
 BLACK_DN = 0            # 0..(2^BIT_DEPTH - 1)
+# Output packing options (how we store DN inside uint16 container when saving)
+OUTPUT_MSB_ALIGNED = True   # False = LSB-aligned (default), True = MSB-aligned
 
 OUT_PATH  = "tools/data/cases/sim/tmp_case/image.png"
 PREVIEW_PATH = "tools/data/cases/sim/tmp_case/preview.png"
@@ -407,7 +409,21 @@ if __name__ == "__main__":
 
     #####################################################
     # SAVE IMAGE
-    cv2.imwrite(OUT_PATH, img)
+
+    bit_shift = 0
+    img_out = img  # default: LSB-aligned DN in uint16 container
+
+    if OUTPUT_MSB_ALIGNED:
+        bit_shift = 16 - BIT_DEPTH   # RAW10 => 6
+        # Safety: ensure img is within [0, 2^BIT_DEPTH - 1] before shifting
+        max_dn = (1 << BIT_DEPTH) - 1
+        img_dn = np.clip(img, 0, max_dn).astype(np.uint16)
+        img_out = (img_dn << bit_shift).astype(np.uint16)
+
+    cv2.imwrite(OUT_PATH, img_out)
+
+    # Preview should be made from DN, not the MSB-packed container.
+    # # If you pass img_out here, it'll look "white" because values are huge.
     img_preview = make_preview_u8(img, BIT_DEPTH)
     cv2.imwrite(PREVIEW_PATH, img_preview)
 

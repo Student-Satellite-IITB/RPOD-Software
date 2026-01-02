@@ -120,20 +120,61 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
     const uint16_t thresh = m_cfg.BIN_THRESH;
 
     // Helper: read pixel DN at (u,v) in native units (supports 8-bit and 16-bit containers)
+    // Supports only 8-bit and 16-bit containers because we return uint16_t
+    // - For 16-bit containers, we explicitly merge bytes to avoid any alignment/UB issues from
+    //   reinterpret_cast<uint16_t*> on potentially unaligned rows.
+    //
+    // Assumptions / notes:
+    // - This code assumes the buffer is **little-endian** (LSB at lower address), which is true for
+    //   Raspberry Pi (ARM little-endian) and typical V4L2 memory buffers on Linux.
+    // - bytes_per_px == 1: GRAY8-like container, returned DN is 0..255.
+    // - bytes_per_px == 2: This covers GRAY16 and RAW10/RAW12 stored in 16-bit.
+    //   We return the 16-bit sample by downshifting with bit_shift
+    // Examples:
+    // - RAW10 MSB-aligned in uint16 (10 bits in bits [15..6]) => bit_shift = 6
+    // - RAW10 LSB-aligned in uint16 (10 bits in bits [9..0])  => bit_shift = 0
+    // - True GRAY16 / RAW16                                   => bit_shift = 0
+
     auto read_dn = [&](int u, int v) -> uint16_t
     {
         const uint8_t* row = data + v * stride; // row start in bytes
-        if (img.bytes_per_px == 1) {
-            return static_cast<uint16_t>(row[u]);
-        } else {
-            // bytes_per_px == 2 (e.g. RAW10/RAW12/GRAY16 stored in 16-bit container)
-            const uint16_t* row16 = reinterpret_cast<const uint16_t*>(row);
-            return row16[u];
-            // We read the full 16-bit sample as stored.
-            // Note: For RAW10/RAW12 unpacked into uint16_t, meaningful bits may be LSB-aligned (0..1023/4095)
-            // or MSB-aligned (shifted up). This function does not mask/shift; thresholds must match the stored DN scale.
 
+        uint16_t sample = 0;
+
+        if (img.bytes_per_px == 1) {
+            // 8-bit container
+            sample = static_cast<uint16_t>(row[u]);
+
+        } else if(img.bytes_per_px == 2) {
+            // bytes_per_px == 2 (e.g. RAW10/RAW12/GRAY16 stored in 16-bit container)
+            // 16-bit container, stored as 2 bytes per pixel.
+            // Little-endian merge: low byte first.
+            const size_t i = static_cast<size_t>(u) * 2u;
+            const uint16_t lo = static_cast<uint16_t>(row[i + 0]);
+            const uint16_t hi = static_cast<uint16_t>(row[i + 1]);
+            sample = static_cast<uint16_t>(lo | (hi << 8));
+
+            // If you ever determine the buffer is big-endian, use this instead:
+            // sample = static_cast<uint16_t>((lo << 8) | hi);
         }
+        else{
+            // Not supported here
+            return 0;
+        }
+
+        // Convert container sample -> native DN (LSB aligned)
+        const uint8_t bitshift = img.bit_shift;          // e.g., 6 for MSB-aligned RAW10-in-16
+        uint16_t dn = static_cast<uint16_t>(sample >> bitshift);
+
+        // Mask to bit depth (avoid UB when bit_depth == 16)
+        // Important if upper bits have garbage values instead of zero
+        if (img.bit_depth < 16)
+        {
+            const uint16_t mask = static_cast<uint16_t>((1u << img.bit_depth) - 1u);
+            dn &= mask;
+        }
+        
+        return dn;
     };
 
     // 8-connected neighbors

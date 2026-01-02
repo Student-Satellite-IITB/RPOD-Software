@@ -67,6 +67,8 @@ int main(int argc, char** argv) {
     input.bit_depth    = static_cast<uint8_t>(BIT_DEPTH); // Number of meaningful bits in each pixel sample.
     // Examples: RAW8 -> 8, RAW10 -> 10, RAW12 -> 12, RAW16 -> 16.
     // Note: RAW10 may be stored in 16-bit containers (bytes_per_px=2, bit_depth=10).
+    // input.bit_shift = 0; // LSB aligned containers
+    input.bit_shift = 6; // RAW10 MSB-aligned in uint16 container (bits [15..6])
 
     // -----------------------------
     // Open results file early (so failures still log metadata)
@@ -143,19 +145,49 @@ int main(int argc, char** argv) {
     // IMPORTANT: cvtColor(CV_16UC1 -> BGR) can be finicky, so convert to 8U only for annotation.
     // This does NOT affect the FD/SPE input path.
     // -----------------------------
-    cv::Mat annotated_src;
-    if (img.depth() == CV_16U) {
-        // simple visualization mapping for annotation only
-        double minv = 0, maxv = 0;
-        cv::minMaxLoc(img, &minv, &maxv);
-        if (maxv <= minv) maxv = minv + 1.0;
-        img.convertTo(annotated_src, CV_8U, 255.0 / maxv);
+    cv::Mat annotated8;
+
+    if (img.type() == CV_16UC1) {
+        // Convert 16-bit container -> native DN (LSB-aligned) into dn16
+        cv::Mat dn16(img.size(), CV_16UC1);
+
+        const int shift = static_cast<int>(input.bit_shift);  // RAW10 MSB-aligned-in-16 => 6, LSB-aligned => 0
+
+        // Mask to keep only "bit_depth" meaningful bits after shifting.
+        const uint16_t mask =
+            (input.bit_depth > 0 && input.bit_depth < 16)
+                ? static_cast<uint16_t>((1u << input.bit_depth) - 1u)
+                : static_cast<uint16_t>(0xFFFF);
+
+        for (int y = 0; y < img.rows; ++y) {
+            const uint16_t* src = img.ptr<uint16_t>(y);
+            uint16_t* dst       = dn16.ptr<uint16_t>(y);
+            for (int x = 0; x < img.cols; ++x) {
+                dst[x] = static_cast<uint16_t>((src[x] >> shift) & mask);
+            }
+        }
+
+        // Now dn16 is native DN in [0 .. (2^bit_depth - 1)].
+        // Scale DN -> 8-bit for visualization.
+        const double denom = double((input.bit_depth >= 1 && input.bit_depth <= 16)
+                                    ? ((1u << input.bit_depth) - 1u)
+                                    : 65535u);
+        const double scale = 255.0 / denom;
+
+        dn16.convertTo(annotated8, CV_8U, scale);
+
+    } else if (img.type() == CV_8UC1) {
+        annotated8 = img; // already 8-bit grayscale
     } else {
-        annotated_src = img;
+        // Optional: handle unexpected types robustly
+        cv::Mat tmp;
+        img.convertTo(tmp, CV_8U);
+        annotated8 = tmp;
     }
 
     cv::Mat annotated;
-    cv::cvtColor(img, annotated, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(annotated8, annotated, cv::COLOR_GRAY2BGR);
+
 
     for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
         const auto& L = features.leds[i];

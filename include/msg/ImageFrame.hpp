@@ -26,6 +26,17 @@ struct ImageFrame {
     // Note: RAW10 may be stored in 16-bit containers (bytes_per_px=2, bit_depth=10).
     uint8_t bit_depth;
 
+    // Right-shift to convert stored container DN -> native DN.
+    //
+    // Examples:
+    // - RAW10 LSB-aligned in uint16: bits are in [9..0]      => bit_shift = 0
+    // - RAW10 MSB-aligned in uint16: bits are in [15..6]     => bit_shift = 6
+    // - RAW12 MSB-aligned in uint16: bits are in [15..4]     => bit_shift = 4
+    // - True GRAY16 / RAW16: full 16 meaningful bits         => bit_shift = 0
+    //
+    // After read_dn(), the returned DN should lie in [0, 2^bit_depth - 1].
+    uint8_t bit_shift;
+
     uint64_t t_exp_end_us;  // exposure-end timestamp (SOM monotonic, µs)
     uint32_t frame_id;      // increasing counter
 
