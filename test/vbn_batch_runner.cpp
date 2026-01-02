@@ -68,19 +68,71 @@ static bool parse_args(int argc, char** argv, Args& out) {
     return true;
 }
 
-static cv::Mat make_vis_gray_u8(const cv::Mat& img) {
-    // For annotation/debug image only (FD uses original img data).
-    if (img.depth() == CV_8U) return img;
-    if (img.depth() == CV_16U) {
-        cv::Mat vis;
-        // Simple MSB mapping: 16-bit -> 8-bit by /256. Good enough for debugging.
-        img.convertTo(vis, CV_8U, 1.0 / 256.0);
-        return vis;
+// static cv::Mat make_vis_gray_u8(const cv::Mat& img) {
+//     // For annotation/debug image only (FD uses original img data).
+//     if (img.depth() == CV_8U) return img;
+//     if (img.depth() == CV_16U) {
+//         cv::Mat vis;
+//         // Simple MSB mapping: 16-bit -> 8-bit by /256. Good enough for debugging.
+//         img.convertTo(vis, CV_8U, 1.0 / 256.0);
+//         return vis;
+//     }
+//     // Fallback: convert anything else to 8U (rare)
+//     cv::Mat vis;
+//     img.convertTo(vis, CV_8U);
+//     return vis;
+// }
+
+// For annotation/debug image only (FD uses original img data).
+// Assumes img is single-channel grayscale: CV_8UC1 or CV_16UC1.
+//
+// bit_depth: meaningful bits (e.g. 10 for RAW10, 16 for GRAY16)
+// bit_shift: how many bits the DN is shifted up inside the 16-bit container
+//            RAW10 MSB-aligned-in-16 => bit_shift=6
+//            RAW10 LSB-aligned-in-16 => bit_shift=0
+static cv::Mat make_vis_gray_u8(const cv::Mat& img, uint8_t bit_depth, uint8_t bit_shift)
+{
+    CV_Assert(img.channels() == 1);
+
+    if (img.type() == CV_8UC1) {
+        return img; // already 8-bit view
     }
-    // Fallback: convert anything else to 8U (rare)
-    cv::Mat vis;
-    img.convertTo(vis, CV_8U);
-    return vis;
+
+    if (img.type() == CV_16UC1) {
+        CV_Assert(bit_depth >= 1 && bit_depth <= 16);
+        CV_Assert(bit_shift <= 15);
+
+        // Step 1: container16 -> dn16 (LSB-aligned DN)
+        cv::Mat dn16(img.rows, img.cols, CV_16UC1);
+
+        const uint16_t mask = (bit_depth == 16) ? 0xFFFFu
+                                                : static_cast<uint16_t>((1u << bit_depth) - 1u);
+
+        for (int r = 0; r < img.rows; ++r) {
+            const uint16_t* src = img.ptr<uint16_t>(r);
+            uint16_t* dst       = dn16.ptr<uint16_t>(r);
+            for (int c = 0; c < img.cols; ++c) {
+                uint16_t s = src[c];
+                s = static_cast<uint16_t>(s >> bit_shift); // undo MSB packing if any
+                s = static_cast<uint16_t>(s & mask);       // keep only meaningful bits
+                dst[c] = s;
+            }
+        }
+
+        // Step 2: DN -> 8-bit for visualization
+        // Map [0 .. (2^bit_depth-1)] -> [0 .. 255]
+        const double denom = double((1u << bit_depth) - 1u);
+        const double scale = (denom > 0.0) ? (255.0 / denom) : 1.0;
+
+        cv::Mat vis8;
+        dn16.convertTo(vis8, CV_8U, scale);
+        return vis8;
+    }
+
+    // Fallback: best-effort
+    cv::Mat vis8;
+    img.convertTo(vis8, CV_8U);
+    return vis8;
 }
 
 static bool run_one_case(const fs::path& case_dir, const Args& args) {
@@ -216,7 +268,7 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
 
     // Optional annotated image (for debugging)
     if (args.write_annotated) {
-        cv::Mat gray_vis = make_vis_gray_u8(img);
+        cv::Mat gray_vis = make_vis_gray_u8(img, input.bit_depth, input.bit_shift);
         cv::Mat annotated;
         cv::cvtColor(gray_vis, annotated, cv::COLOR_GRAY2BGR);
 
