@@ -24,12 +24,22 @@ struct CameraIntrinsics{
 struct PatternGeometry{
     float PATTERN_RADIUS = 0.050f;
     float PATTERN_OFFSET = 0.020f;
+
+    float D = PATTERN_RADIUS;
+    float H = PATTERN_OFFSET;
+
+    std::array<float, 15> P_PINV ={};
 };
 
 enum class AlgoType: uint8_t{
-    ANALYTICAL_INNER = 0
+    ANALYTICAL_INNER = 0,
+    ANALYTICAL_GENERIC = 1,
     // Add more algorithms as needed
 };
+
+// Forward declaration
+// Defined in .cpp
+struct Pose;
 
 struct StaticPoseEstimatorConfig{
 
@@ -56,7 +66,6 @@ public:
 private:
 
     StaticPoseEstimatorConfig m_cfg{};
-
 
     // LED PACKING
     using InnerPatternLeds = std::array<msg::Led2D, 5>;
@@ -87,21 +96,23 @@ private:
     // POSE ESTIMATION ALGORITHMS
 
     // Pose estimation dispatcher
-    bool estimatePose(const PackedLeds& packed,
-                      float az, float el,
-                      float& roll, float& pitch, float& yaw,
-                      float& range_m) const;
+    bool estimatePose(const PackedLeds& packed, 
+                      float az, float el, 
+                      Pose& pose) const;
 
     // Analytical pose estimation algorithm for INNER pattern
-    bool estimatePoseAnalyticalInner(const PackedLeds& packed,
-                                     float az, float el,
-                                     float& roll, float& pitch, float& yaw,
-                                     float& range_m) const;
+    bool estimatePoseAnalyticalInner(const PackedLeds& packed, 
+                                     float az, float el, 
+                                     Pose& pose) const;
+
+    // Generic Analytical Pose Estimation algorithm
+    bool genericAnalyticalPose(const PackedLeds& packed, 
+                               float az, float el, 
+                               Pose& pose) const;
 
     // MEASUREMENT CONFIDENCE EVALUATION
     float evaluateReprojectionError(const PackedLeds& packed,
-                                   float roll, float pitch, float yaw,
-                                   float range_m);
+                                    const Pose& pose);
 
 
 };

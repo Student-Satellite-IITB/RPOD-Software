@@ -8,7 +8,8 @@ namespace vbn {
 static inline FeatureDetectorConfig sanitise(const FeatureDetectorConfig& in) {
     FeatureDetectorConfig cfg = in;
 
-    if (cfg.BIN_THRESH > 255) cfg.BIN_THRESH = 255;
+    // Clamp currently removed to first get comfortable with 16 bit containers with 10 bit depth
+    //if (cfg.BIN_THRESH > 255) cfg.BIN_THRESH = 255;
 
     if (cfg.MIN_BLOB_AREA < 1) cfg.MIN_BLOB_AREA = 1;
     if (cfg.MAX_BLOB_AREA < cfg.MIN_BLOB_AREA)
@@ -114,9 +115,67 @@ void vbn::FeatureDetector::defineROI(const msg::ImageFrame& img) {
 std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobArray& blobs){
     
     const uint8_t* data = img.data;
-    const int stride = static_cast<int>(img.stride);
+    const uint32_t stride = img.stride; // bytes per row
 
-    const uint8_t thresh = m_cfg.BIN_THRESH;
+    const uint16_t thresh = m_cfg.BIN_THRESH;
+
+    // Helper: read pixel DN at (u,v) in native units (supports 8-bit and 16-bit containers)
+    // Supports only 8-bit and 16-bit containers because we return uint16_t
+    // - For 16-bit containers, we explicitly merge bytes to avoid any alignment/UB issues from
+    //   reinterpret_cast<uint16_t*> on potentially unaligned rows.
+    //
+    // Assumptions / notes:
+    // - This code assumes the buffer is **little-endian** (LSB at lower address), which is true for
+    //   Raspberry Pi (ARM little-endian) and typical V4L2 memory buffers on Linux.
+    // - bytes_per_px == 1: GRAY8-like container, returned DN is 0..255.
+    // - bytes_per_px == 2: This covers GRAY16 and RAW10/RAW12 stored in 16-bit.
+    //   We return the 16-bit sample by downshifting with bit_shift
+    // Examples:
+    // - RAW10 MSB-aligned in uint16 (10 bits in bits [15..6]) => bit_shift = 6
+    // - RAW10 LSB-aligned in uint16 (10 bits in bits [9..0])  => bit_shift = 0
+    // - True GRAY16 / RAW16                                   => bit_shift = 0
+
+    auto read_dn = [&](int u, int v) -> uint16_t
+    {
+        const uint8_t* row = data + v * stride; // row start in bytes
+
+        uint16_t sample = 0;
+
+        if (img.bytes_per_px == 1) {
+            // 8-bit container
+            sample = static_cast<uint16_t>(row[u]);
+
+        } else if(img.bytes_per_px == 2) {
+            // bytes_per_px == 2 (e.g. RAW10/RAW12/GRAY16 stored in 16-bit container)
+            // 16-bit container, stored as 2 bytes per pixel.
+            // Little-endian merge: low byte first.
+            const size_t i = static_cast<size_t>(u) * 2u;
+            const uint16_t lo = static_cast<uint16_t>(row[i + 0]);
+            const uint16_t hi = static_cast<uint16_t>(row[i + 1]);
+            sample = static_cast<uint16_t>(lo | (hi << 8));
+
+            // If you ever determine the buffer is big-endian, use this instead:
+            // sample = static_cast<uint16_t>((lo << 8) | hi);
+        }
+        else{
+            // Not supported here
+            return 0;
+        }
+
+        // Convert container sample -> native DN (LSB aligned)
+        const uint8_t bitshift = img.bit_shift;          // e.g., 6 for MSB-aligned RAW10-in-16
+        uint16_t dn = static_cast<uint16_t>(sample >> bitshift);
+
+        // Mask to bit depth (avoid UB when bit_depth == 16)
+        // Important if upper bits have garbage values instead of zero
+        if (img.bit_depth < 16)
+        {
+            const uint16_t mask = static_cast<uint16_t>((1u << img.bit_depth) - 1u);
+            dn &= mask;
+        }
+        
+        return dn;
+    };
 
     // 8-connected neighbors
     const int du[8] = {-1, 0, 1, 1, 1, 0, -1, -1};
@@ -144,7 +203,7 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
     for (int v = m_roi_v_min; v <= m_roi_v_max; ++v) {
         for (int u = m_roi_u_min; u <= m_roi_u_max; ++u) {         
             
-            const uint8_t pixel_val = data[v * stride + u];
+            const uint16_t pixel_val = read_dn(u, v);
 
             if (pixel_val < thresh || visited[v][u]) {
                 continue;
@@ -180,13 +239,16 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
                 Pix p = stack[--sp]; //pop pixel from stack
                 const int pu = p.u;
                 const int pv = p.v;
-                const uint8_t p_val = data[pv * stride + pu];
+                const uint16_t p_val = read_dn(pu, pv);
 
                 // Accumulate blob properties
                 // Weighter coordinates used for centroid calculation after flood-filling
-                B.u_cx += static_cast<float>(pu)*std::pow(static_cast<float>(p_val),2);
-                B.v_cx += static_cast<float>(pv)*std::pow(static_cast<float>(p_val),2);
-                B.intensity += std::pow(static_cast<float>(p_val),2);
+                const float w  = static_cast<float>(p_val);
+                const float w2 = w * w; // same as pow(w,2) but faster/clearer
+
+                B.u_cx += static_cast<float>(pu) * w2;
+                B.v_cx += static_cast<float>(pv) * w2;
+                B.intensity += w2;
                 B.area += 1;
 
                 // Explore 8-connected neighbors
@@ -205,7 +267,7 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
                         continue;
                     }
 
-                    const uint8_t n_val = data[nv * stride + nu];
+                    const uint16_t n_val = read_dn(nu, nv);
 
                     // Check if neighbour is above threshold
                     if (n_val < thresh){
@@ -526,6 +588,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
 
         L.u_px       = B.u_cx;
         L.v_px       = B.v_cx;
+        L.area       = B.area;
         L.strength   = B.intensity / (255.0f * B.area + 1e-6f);
         L.pattern_id = msg::PatternId::INNER;
         L.slot_id    = static_cast<uint8_t>(s);  // TOP/LEFT/BOTTOM/RIGHT/CENTER
@@ -569,7 +632,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     BlobArray blobs{};
     const std::size_t num_blobs = detectBlobs(img, blobs);
 
-    std::cout << "[FeatureDetector] Detected " << num_blobs << " blobs\n";
 
     if (num_blobs <5) {
         // Less than 5 blobs found → LOST
@@ -579,9 +641,46 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     }
     
     // BLOB-AREA THRESHOLDING
-    const std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
-    
-    std::cout << "[FeatureDetector] " << num_led_blobs << " blobs after area thresholding\n";
+
+    // threshold blobs modifies blobs in place so we back them up
+    BlobArray blobs_raw = blobs; 
+
+    std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
+
+
+    // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
+    // It might be that the blobs are valid but smaller than min area
+    // Even if not the pattern identification step will reject them cheaply
+    if(num_led_blobs < 5){
+        // Not enough blobs to identify pattern
+        // We perform some FDIR logic
+
+        if(num_blobs == 5){
+            // All blobs are potential LED blobs
+            // No area thresholding needed
+
+            blobs = blobs_raw; // Restore raw blobs
+            num_led_blobs = num_blobs;
+
+        } else {
+            // More than 5 blobs detected but none over min area threshold
+            
+            // Mark lost as this is a degraded state if we are in TRACKING mode
+            // Dont return false immediately as we can try top-5 blobs for pattern identification
+            m_current_state = msg::TrackState::LOST;
+
+            // Future FDIR logic:
+            // Pass on top-5 blobs by intensity to pattern identification step
+            // Currently not implemnented so we return false here
+            out.state = m_current_state;
+            return false; // Detection was unsucessfull due to insufficient blobs
+        }
+    }
+
+    // Idea for future FDIR logic here:
+    // if num_led_blobs < 5 post thresholding relax area thresholds
+    // and try again till some limit
+    // Or use dynamic area thresholds based on range estimate if any
 
     // PATTERN-IDENTIFICATION
     LedArray leds{};
@@ -593,8 +692,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
-        
-        std::cout << "[FeatureDetector] Pattern identification failed with confidence: " << confidence << "\n";
 
         // If in TRACK state, try once more
         if(m_current_state == msg::TrackState::TRACK){

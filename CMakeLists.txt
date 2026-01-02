@@ -21,6 +21,7 @@ endif()
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lib/eigen
 )
 
 # ==== Source Files ====
@@ -51,6 +52,8 @@ add_executable(rpod_test_pipeline src/main.cpp ${SOURCES})
 add_executable(rpod_som src/som_main.cpp ${SOURCES})
 
 # Add test executables
+add_executable(vbn_batch_runner test/vbn_batch_runner.cpp ${SOURCES})
+
 add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SOURCES})
 add_executable(vbn_staticposeestimation_test test/vbn_staticposeestimation_test.cpp ${SOURCES})
 
@@ -66,6 +69,8 @@ if(TARGET_PLATFORM STREQUAL "linux")
     target_link_libraries(rpod_test_pipeline ${OpenCV_LIBS} pthread)
     target_link_libraries(rpod_som ${OpenCV_LIBS} pthread)
     # Link VBN test executable
+    target_link_libraries(vbn_batch_runner ${OpenCV_LIBS} pthread)
+    target_link_libraries(vbn_featuredetection_test ${OpenCV_LIBS} pthread)
     target_link_libraries(vbn_featuredetection_test ${OpenCV_LIBS} pthread)
     target_link_libraries(vbn_staticposeestimation_test ${OpenCV_LIBS} pthread)
     # Link RTOS test executables
