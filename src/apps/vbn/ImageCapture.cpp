@@ -156,7 +156,7 @@ bool ImageCapture::Requeue(uint16_t v4l2_buff_index) {
     buf.memory = V4L2_MEMORY_MMAP;
     buf.index  = idx;
 
-    if (xioctl(m_fd, VIDIOC_QBUF, &buf) != -1){
+    if (xioctl(m_fd, VIDIOC_QBUF, &buf) == -1){
         return fail(Status::QBUF_FAIL);
     }
 

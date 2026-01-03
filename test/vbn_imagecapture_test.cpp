@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     const char* dev = "/dev/video0";
     if (argc >= 2) dev = argv[1];
 
-    const std::string out_path = "tools/data/temp/frame.raw";
+    const std::string out_path = "../tools/data/temp/frame.raw";
 
     std::cout << "=== vbn_imagecapture_test (RasPi) ===\n";
     std::cout << "Device: " << dev << "\n";
@@ -82,6 +82,9 @@ int main(int argc, char** argv) {
     bool saved = false;
     uint64_t last_t = 0;
     bool first = true;
+
+    uint64_t sum_dt_us = 0;
+    int dt_count = 0;
 
     for (int k = 0; k < N; ++k) {
         msg::ImageFrame f{};
@@ -118,16 +121,23 @@ int main(int argc, char** argv) {
             std::cout << "  WARN: timestamp went backwards (prev=" << last_t
                       << " now=" << f.t_exp_end_us << ")\n";
         }
-        last_t = f.t_exp_end_us;
-        first = false;
 
         std::cout << "  k=" << k
                   << " idx=" << f.v4l2_buff_index
                   << " frame_id=" << f.frame_id
                   << " t_us=" << f.t_exp_end_us
                   << " stride=" << f.stride
-                  << " bpp=" << int(f.bytes_per_px)
-                  << "\n";
+                  << " bpp=" << int(f.bytes_per_px);
+
+        if (!first) {
+            const uint64_t dt_us = f.t_exp_end_us - last_t;
+            const double fps_inst = (dt_us > 0) ? (1e6 / double(dt_us)) : 0.0;
+            sum_dt_us += dt_us;
+            dt_count++;
+            std::cout << " dt_us=" << dt_us << " fps=" << fps_inst;
+        }
+
+        std::cout << std::endl;
 
         if (!cap.Requeue(f.v4l2_buff_index)) {
             std::cout << "Requeue(): FAIL at k=" << k << "\n";
@@ -135,6 +145,18 @@ int main(int argc, char** argv) {
             cap.Stop();
             return 1;
         }
+
+        last_t = f.t_exp_end_us;
+        first = false;
+    }
+
+    if (dt_count > 0) {
+        const double avg_dt_us = double(sum_dt_us) / double(dt_count);
+        const double fps_avg = (avg_dt_us > 0) ? (1e6 / avg_dt_us) : 0.0;
+
+        std::cout << "\nAverage over " << dt_count << " intervals: "
+                << "avg_dt_us=" << avg_dt_us
+                << " fps_avg=" << fps_avg << "\n";
     }
 
     std::cout << "\n[Test 2] Stop() idempotence\n";
