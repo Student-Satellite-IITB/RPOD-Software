@@ -40,6 +40,10 @@ struct ImageFrame {
     uint64_t t_exp_end_us;  // exposure-end timestamp (SOM monotonic, µs)
     uint32_t frame_id;      // increasing counter
 
+    // Ownership
+    // V4L2 MMAP buffer index from VIDIOC_DQBUF; required to return the buffer via VIDIOC_QBUF.
+    uint16_t v4l2_buff_index; 
+
   constexpr uint32_t byteSize() const { return stride * height; }
 };
 

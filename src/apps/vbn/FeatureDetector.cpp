@@ -1,5 +1,4 @@
 #include "apps/vbn/FeatureDetector.hpp"
-#include "apps/queues.hpp"
 #include <iostream>
 #include <cmath>
 // #include <opencv2/opencv.hpp>
