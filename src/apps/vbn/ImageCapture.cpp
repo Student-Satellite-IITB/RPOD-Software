@@ -216,12 +216,12 @@ void ImageCapture::TaskEntry(void* arg) {
     // Defensive checks: if someone accidentally passed nullptr or an
     // incomplete context, we exit the task cleanly.
     // In flight we will raise an event/fault here instead of returning.
-    if (!ctx || !ctx->imgcap || !ctx->live_out || !ctx->release_in) {
+    if (!ctx || !ctx->self || !ctx->live_out || !ctx->release_in) {
         return; // dev behavior: fail silently; later you can raise an event
     }
 
     // Start the V4L2 stream and mmap buffers.
-    if (!ctx->imgcap->Start()) {
+    if (!ctx->self->Start()) {
         return; // optional: log ctx->ic->lastStatus()/lastErrno()
     }
 
@@ -231,7 +231,7 @@ void ImageCapture::TaskEntry(void* arg) {
     // - publishes to LiveFrameQueue (freshest wins)
     //
     // Minimal version: Run() is an infinite loop and does not return.
-    ctx->imgcap->Run(*ctx->live_out, *ctx->release_in);
+    ctx->self->Run(*ctx->live_out, *ctx->release_in);
 }
 
 // -------------------- private helpers --------------------

@@ -52,13 +52,15 @@ public:
     // Task entry wiring for OSAL (void* arg).
     // NOTE: The TaskCtx object must outlive the task (static or main-scope that never exits).
     struct TaskCtx {
-        ImageCapture*      imgcap    = nullptr;
+        // Pointer to ImageCapture object
+        ImageCapture*      self    = nullptr;
+
+        // Pointers to Queues
         LiveFrameQueue*    live_out  = nullptr;
         ReleaseFrameQueue* release_in = nullptr;
     };
 
-    static void TaskEntry(void* arg);
-
+public:
     explicit ImageCapture(const ImageCaptureConfig& cfg);
     ~ImageCapture();
 
@@ -83,6 +85,9 @@ public:
     // - publishes newest to live_out (overwrite=true)
     // This is the only place queues matter.
     void Run(LiveFrameQueue& live_out, ReleaseFrameQueue& release_in);
+
+    // OSAL-compatible entry point
+    static void TaskEntry(void* arg);
 
     // Optional introspection for logging/debug
     uint32_t negotiatedWidth()  const { return m_width; }
