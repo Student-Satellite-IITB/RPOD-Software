@@ -15,6 +15,129 @@
 #include "msg/PoseEstimate.hpp"
 
 #include <linux/videodev2.h> // only for V4L2_PIX_FMT_* in this test
+#include <cmath> // For M_PI
+
+constexpr double RAD2DEG = 180.0 / M_PI;
+
+// -------------------- Monitor task --------------------
+// Low-priority "observer" task:
+// - Non-blocking reads from pose/feature queues (freshest-wins).
+// - Prints at a slow cadence so it doesn't perturb IC/VBN timing.
+// - Computes a rough pose update rate (Hz) from timestamps.
+namespace {
+
+// mono_us: monotonic clock time helper using clock_gettime
+static uint64_t mono_us_test() {
+    timespec ts{};
+    ::clock_gettime(CLOCK_MONOTONIC, &ts);
+    return uint64_t(ts.tv_sec) * 1000000ull + uint64_t(ts.tv_nsec) / 1000ull;
+}
+
+struct MonitorTaskCtx {
+    vbn::FeatureFrameQueue* feat_in = nullptr;   // optional
+    vbn::PoseEstimateQueue* pose_in = nullptr;   // optional
+};
+
+void MonitorTaskEntry(void* arg) {
+    auto* ctx = static_cast<MonitorTaskCtx*>(arg);
+
+    // Defensive: allow running with only pose or only features
+    if (!ctx || (!ctx->feat_in && !ctx->pose_in)) {
+        return;
+    }
+
+    std::cout << "[Monitor] started\n";
+
+    uint64_t last_print_us = mono_us_test();
+    constexpr uint64_t PRINT_PERIOD_US = 1'000'000;
+
+    uint32_t pose_count = 0;
+    uint32_t feat_count = 0;
+
+    msg::PoseEstimate last_pose{};
+    msg::FeatureFrame last_feat{};
+    bool have_pose = false;
+    bool have_feat = false;
+
+    while (true) {
+
+        // Drain newest features (non-blocking)
+        if (ctx->feat_in) {
+            msg::FeatureFrame features{};
+            while (ctx->feat_in->try_receive(features)) {
+                last_feat = features;
+                have_feat = true;
+                feat_count++;
+            }
+        }
+
+        // Drain newest pose (non-blocking)
+        if (ctx->pose_in) {
+            msg::PoseEstimate pose{};
+            while (ctx->pose_in->try_receive(pose)) {
+                last_pose = pose;
+                have_pose = true;
+                pose_count++;
+            }
+        }
+
+        const uint64_t now_us = mono_us_test();
+        if (now_us - last_print_us >= PRINT_PERIOD_US) {
+            const double dt_s = double(now_us - last_print_us) * 1e-6;
+            const double pose_hz = (dt_s > 0.0) ? (double(pose_count) / dt_s) : 0.0;
+            const double feat_hz = (dt_s > 0.0) ? (double(feat_count) / dt_s) : 0.0;
+
+            std::cout << "[Monitor] pose_hz=" << pose_hz
+                      << " feat_hz=" << feat_hz;
+
+            if (have_feat) {
+                std::cout << "[FD] OK ";
+                std::cout << "[FD] LEDs detected = " << static_cast<int>(last_feat.led_count) << "\n";
+                std::cout << "[FD] Track state = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST")<< "\n";
+            } else {
+                std::cout << "[FD]  ";
+            }
+
+            if (have_pose) {
+                // std::cout << " range_m=" << last_pose.range_m;
+                // std::cout << " yaw_deg=" << last_pose.yaw_deg;
+
+                auto q = last_pose.q_C_P;
+                auto t = last_pose.t_CbyP;
+                double az_deg = last_pose.az * RAD2DEG;
+                double el_deg = last_pose.el * RAD2DEG;
+                double roll_deg  = last_pose.roll  * RAD2DEG;
+                double pitch_deg = last_pose.pitch * RAD2DEG;
+                double yaw_deg   = last_pose.yaw   * RAD2DEG;
+                double range_cm  = last_pose.range_m * 100.0; // m → cm
+
+                std::cout << "[SPE] OK ";
+                std::cout << "[SPE] Pose estimation SUCCESS.\n";
+                // std::cout << "      Azimuth  = " << az_deg<< " deg\n";
+                // std::cout << "      Elevation = " << el_deg << " deg\n";
+                // std::cout << "      Roll  = " << roll_deg  << " deg\n";
+                // std::cout << "      Pitch = " << pitch_deg << " deg\n";
+                // std::cout << "      Yaw   = " << yaw_deg   << " deg\n";
+                std::cout << "      Range = " << range_cm  << " cm\n";
+                // std::cout << "      Quaternion = [ "<< q[0] << ", " << q[1] << ", " << q[2] << ", " << q[3] <<"]\n";
+                std::cout << "      Reproj RMS = " << last_pose.reproj_rms_px << " px\n";
+            } else {
+                std::cout << "[SPE] NONE ";
+            }
+
+            std::cout << "\n";
+
+            last_print_us = now_us;
+            pose_count = 0;
+            feat_count = 0;
+        }
+
+        // Yield CPU, don't spin.
+        Rtos::SleepMs(1000);
+    }
+}
+
+} // namespace
 
 
 
@@ -87,17 +210,26 @@ int main() {
     vbn_ctx.feat_out = &featureFrameQueue;
     vbn_ctx.pose_out = &poseEstimateQueue;
 
+    MonitorTaskCtx mon_ctx{};
+    mon_ctx.feat_in = &featureFrameQueue;
+    mon_ctx.pose_in = &poseEstimateQueue;
+
     // ---- TASKS ----
     Rtos::Task ImageCaptureTask;
     Rtos::Task VBNTask;
+
+    Rtos::Task MonitorTask;
     
     // Create Tasks
     ImageCaptureTask.Create("ImageCapture", &vbn::ImageCapture::TaskEntry, &cap_ctx);
     VBNTask.Create("VBN", &vbn::VBNTask::TaskEntry, &vbn_ctx);
 
+    MonitorTask.Create("Monitor", MonitorTaskEntry, &mon_ctx);
+
     // Join Task (Waits indefinitely)
     ImageCaptureTask.Join();
     VBNTask.Join();
+    MonitorTask.Join();
 
     return 0;
 }
