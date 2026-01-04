@@ -1,0 +1,54 @@
+case_id = CASE_UNKNOWN
+case_dir = ../tools/data/cases/hw/CASE_251230_Unknown/
+input_image = ../tools/data/cases/hw/CASE_251230_Unknown/image.png
+opencv_type = 2
+channels = 1
+width = 1280
+height = 800
+stride_bytes = 2560
+bytes_per_px = 2
+container_bit_depth = 10
+
+[FD]
+fd_ok = 1
+fd_track_state = TRACK
+fd_led_count = 5
+fd_time_ms = 3.65285
+fd_bin_thresh = 250
+fd_min_blob_area = 50
+fd_max_blob_area = 20000
+fd_led0.id = 0
+fd_led0.u_px = 631.306
+fd_led0.v_px = 361.369
+fd_led0.area = 48
+fd_led1.id = 1
+fd_led1.u_px = 620.932
+fd_led1.v_px = 372.765
+fd_led1.area = 43
+fd_led2.id = 2
+fd_led2.u_px = 632.109
+fd_led2.v_px = 383.32
+fd_led2.area = 33
+fd_led3.id = 3
+fd_led3.u_px = 642.574
+fd_led3.v_px = 372.113
+fd_led3.area = 36
+fd_led4.id = 4
+fd_led4.u_px = 631.009
+fd_led4.v_px = 372.066
+fd_led4.area = 46
+
+[SPE]
+spe_ok = 1
+spe_valid = 1
+spe_time_ms = 6.7569
+spe_reproj_rms_px = 0.0955404
+az_deg = -0.521462692
+el_deg = 1.739808090
+roll_deg = 2.121283227
+pitch_deg = 0.065597357
+yaw_deg = -3.286316277
+range_m = 0.832963586
+R_C_P_rowmajor = 0.998354912 -0.057325557 -0.001144890 0.057328615 0.997668922 0.037014890 -0.000979678 -0.037019629 0.999314010
+q_C_P = 0.999417067 0.018519426 0.000041327 -0.028680261
+t_Cbyp = -0.832545161 0.007577403 0.025288323

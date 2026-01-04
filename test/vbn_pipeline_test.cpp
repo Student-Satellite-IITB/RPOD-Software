@@ -17,7 +17,11 @@
 #include <linux/videodev2.h> // only for V4L2_PIX_FMT_* in this test
 #include <cmath> // For M_PI
 
+#include <fstream> // Offline plotting
+
 constexpr double RAD2DEG = 180.0 / M_PI;
+
+const bool ENABLE_RANGE_CSV_LOGGING = true;
 
 // -------------------- Monitor task --------------------
 // Low-priority "observer" task:
@@ -46,7 +50,7 @@ void MonitorTaskEntry(void* arg) {
         return;
     }
 
-    std::cout << "[Monitor] started\n";
+    std::cout << "[MONITOR] started\n";
 
     uint64_t last_print_us = mono_us_test();
     constexpr uint64_t PRINT_PERIOD_US = 1'000'000;
@@ -56,17 +60,34 @@ void MonitorTaskEntry(void* arg) {
 
     msg::PoseEstimate last_pose{};
     msg::FeatureFrame last_feat{};
-    bool have_pose = false;
-    bool have_feat = false;
+
+    // CSV LOGGING STATE
+    constexpr uint32_t LOG_N     = 1000;  // ~17.4s @57Hz
+    constexpr uint32_t LOG_EVERY = 1;
+
+    std::ofstream csv;
+    uint32_t k = 0;
+    uint32_t logged = 0;
+
+    if (ENABLE_RANGE_CSV_LOGGING) {
+        csv.open("../tools/data/temp/range_log.csv", std::ios::out | std::ios::trunc);
+        if (!csv) {
+            std::cout << "[MONITOR] ERROR: could not open CSV for writing\n";
+        } else {
+            csv << "k,t_us,range_cm,reproj_rms_px\n";
+        }
+    }
 
     while (true) {
+        bool got_new_feat = false;
+        bool got_new_pose = false;
 
         // Drain newest features (non-blocking)
         if (ctx->feat_in) {
             msg::FeatureFrame features{};
             while (ctx->feat_in->try_receive(features)) {
                 last_feat = features;
-                have_feat = true;
+                got_new_feat = true;
                 feat_count++;
             }
         }
@@ -76,31 +97,52 @@ void MonitorTaskEntry(void* arg) {
             msg::PoseEstimate pose{};
             while (ctx->pose_in->try_receive(pose)) {
                 last_pose = pose;
-                have_pose = true;
+                got_new_pose = true;
                 pose_count++;
             }
         }
 
+        // ---- CSV LOGGING ----
+        if (ENABLE_RANGE_CSV_LOGGING && csv && logged < LOG_N) {
+            if (got_new_pose && (k % LOG_EVERY == 0)) {
+                csv << logged << ","
+                    << last_pose.t_exp_end_us << ","
+                    << (last_pose.range_m * 100.0) << ","
+                    << last_pose.reproj_rms_px << "\n";
+                logged++;
+
+                if (logged == LOG_N) {
+                    csv.flush();
+                    csv.close();
+                    std::cout << "[MONITOR] Wrote range_log.csv (" << LOG_N << " rows)\n";
+                }
+            }
+            k++;
+        }
+
+
+        // ---- MONITOR PRINTING ----
         const uint64_t now_us = mono_us_test();
         if (now_us - last_print_us >= PRINT_PERIOD_US) {
             const double dt_s = double(now_us - last_print_us) * 1e-6;
             const double pose_hz = (dt_s > 0.0) ? (double(pose_count) / dt_s) : 0.0;
             const double feat_hz = (dt_s > 0.0) ? (double(feat_count) / dt_s) : 0.0;
 
-            std::cout << "[Monitor] pose_hz=" << pose_hz
-                      << " feat_hz=" << feat_hz;
+            std::cout << "[Monitor] feat_hz=" << feat_hz
+                      << " pose_hz=" << pose_hz <<"\n";
 
-            if (have_feat) {
-                std::cout << "[FD] OK ";
+            const bool new_feat = (feat_count > 0);
+            const bool new_pose = (pose_count > 0);
+
+            if (new_feat) {
+                std::cout << "[FD] OK \n";
                 std::cout << "[FD] LEDs detected = " << static_cast<int>(last_feat.led_count) << "\n";
                 std::cout << "[FD] Track state = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST")<< "\n";
             } else {
-                std::cout << "[FD]  ";
+                std::cout << "[FD] NONE \n";
             }
 
-            if (have_pose) {
-                // std::cout << " range_m=" << last_pose.range_m;
-                // std::cout << " yaw_deg=" << last_pose.yaw_deg;
+            if (new_pose) {
 
                 auto q = last_pose.q_C_P;
                 auto t = last_pose.t_CbyP;
@@ -111,18 +153,17 @@ void MonitorTaskEntry(void* arg) {
                 double yaw_deg   = last_pose.yaw   * RAD2DEG;
                 double range_cm  = last_pose.range_m * 100.0; // m → cm
 
-                std::cout << "[SPE] OK ";
-                std::cout << "[SPE] Pose estimation SUCCESS.\n";
-                // std::cout << "      Azimuth  = " << az_deg<< " deg\n";
-                // std::cout << "      Elevation = " << el_deg << " deg\n";
-                // std::cout << "      Roll  = " << roll_deg  << " deg\n";
-                // std::cout << "      Pitch = " << pitch_deg << " deg\n";
-                // std::cout << "      Yaw   = " << yaw_deg   << " deg\n";
+                std::cout << "[SPE] OK \n";
+                std::cout << "      Azimuth  = " << az_deg<< " deg\n";
+                std::cout << "      Elevation = " << el_deg << " deg\n";
+                std::cout << "      Roll  = " << roll_deg  << " deg\n";
+                std::cout << "      Pitch = " << pitch_deg << " deg\n";
+                std::cout << "      Yaw   = " << yaw_deg   << " deg\n";
                 std::cout << "      Range = " << range_cm  << " cm\n";
                 // std::cout << "      Quaternion = [ "<< q[0] << ", " << q[1] << ", " << q[2] << ", " << q[3] <<"]\n";
                 std::cout << "      Reproj RMS = " << last_pose.reproj_rms_px << " px\n";
             } else {
-                std::cout << "[SPE] NONE ";
+                std::cout << "[SPE] NONE \n";
             }
 
             std::cout << "\n";
@@ -132,8 +173,9 @@ void MonitorTaskEntry(void* arg) {
             feat_count = 0;
         }
 
-        // Yield CPU, don't spin.
-        Rtos::SleepMs(1000);
+    // Yield CPU, don't spin.
+    // Uncomment for Full Speeed
+    //Rtos::SleepMs(100);
     }
 }
 
@@ -223,7 +265,7 @@ int main() {
     // Create Tasks
     ImageCaptureTask.Create("ImageCapture", &vbn::ImageCapture::TaskEntry, &cap_ctx);
     VBNTask.Create("VBN", &vbn::VBNTask::TaskEntry, &vbn_ctx);
-
+    
     MonitorTask.Create("Monitor", MonitorTaskEntry, &mon_ctx);
 
     // Join Task (Waits indefinitely)

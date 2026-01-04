@@ -1,0 +1,2 @@
+This image is taken from the V4L2 pipeline with unknown geometry and camera settings
+The LED pattern was at the end of the gantry furthest away qualitatively

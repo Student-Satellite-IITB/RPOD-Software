@@ -40,7 +40,7 @@
 
 # Generated VBN test data (keep folder READMEs tracked)
 tools/data/cases/sim/*
-tools/data/cases/hw/*
+tools/data/temp/*
 
 !tools/data/cases/sim/README.md
 !tools/data/cases/hw/README.md

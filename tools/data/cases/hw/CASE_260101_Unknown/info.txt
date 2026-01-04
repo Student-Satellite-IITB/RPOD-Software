@@ -1,0 +1,10 @@
+This image is taken from the V4L2 pipeline with pattern very close to camera (~ 10 cms)
+Exposure (lines)= 50 lines 
+V4L2 sensor subdev settings: 1280×800, HB=250, pixel_rate=160,000,000:
+line_length = 1280 + 250 = 1530 px
+line_time = 1530 / 160e6 = 9.5625 µs
+Exposure = 50*9.56 = 478 µs
+
+
+Note that reprojection RMS error is higher because the pattern seems to disobey the given geometry 
+and the centroid according to brightness weights is not at the center of the LED due to non uniform lighting inside the LED.
