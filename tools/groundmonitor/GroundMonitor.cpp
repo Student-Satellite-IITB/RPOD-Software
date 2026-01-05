@@ -305,7 +305,7 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
 
 static std::ofstream open_csv(const GroundMonitorCtx& ctx) {
     std::filesystem::create_directories(ctx.cfg.out_dir);
-    const std::string path = std::string(ctx.cfg.out_dir) + "/range_log.csv";
+    const std::string path = ctx.cfg.out_dir + "/range_log.csv";
     std::ofstream f(path, std::ios::out | std::ios::trunc);
     if (!f) {
         std::cout << "[MONITOR] ERROR: could not open CSV: " << path

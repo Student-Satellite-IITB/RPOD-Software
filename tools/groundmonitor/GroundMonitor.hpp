@@ -5,6 +5,8 @@
 #include "msg/FeatureFrame.hpp"
 #include "msg/PoseEstimate.hpp"
 
+#include <string>
+
 namespace ground {
 
 // -------------------- Monitor task --------------------
@@ -16,7 +18,7 @@ namespace ground {
 struct GroundMonitorConfig {
     // Logging
     bool enable_csv = false;
-    char* out_dir = "tools/data/tmp/vbn_monitor";
+    std::string  out_dir = "tools/data/tmp/vbn_monitor";
     uint32_t log_n = 1000;
     uint32_t log_every = 1;
 
