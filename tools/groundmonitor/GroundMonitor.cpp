@@ -201,7 +201,7 @@ static void server_main(int port, int stream_fps) {
         return;
     }
 
-    std::cout << "[MJPEG] Server started on port " << port << " (http://<pi-ip>:" << port << "/)\n";
+    std::cout << "[MJPEG] Server started on port " << port << "\n";
 
     while (true) {
         sockaddr_in caddr{};
@@ -249,9 +249,12 @@ static cv::Mat y16_to_8u_preview(const vbn::CopiedImage& img) {
 }
 
 static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::PoseEstimate& pose) {
+
+    // Crosshairs
     cv::line(bgr, {0, bgr.rows/2}, {bgr.cols-1, bgr.rows/2}, {255,255,255}, 1);
     cv::line(bgr, {bgr.cols/2, 0}, {bgr.cols/2, bgr.rows-1}, {255,255,255}, 1);
 
+    // LEDs annotatiion
     for (int i = 0; i < (int)feat.led_count; ++i) {
         const auto& L = feat.leds[i];
         cv::Point pt((int)std::lround(L.u_px), (int)std::lround(L.v_px));
@@ -272,6 +275,8 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
         + " leds=" + std::to_string((int)feat.led_count));
 
     if (pose.valid) {
+        const double az    = pose.az    * RAD2DEG;
+        const double el    = pose.el    * RAD2DEG;
         const double roll  = pose.roll  * RAD2DEG;
         const double pitch = pose.pitch * RAD2DEG;
         const double yaw   = pose.yaw   * RAD2DEG;
@@ -280,7 +285,12 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
         put("SPE: OK");
         {
             char s[128];
-            std::snprintf(s, sizeof(s), "RPY(deg)=(%.2f, %.2f, %.2f)", roll, pitch, yaw);
+            std::snprintf(s, sizeof(s), "Az=%.1fdeg  El=%.1fdeg", az, el);
+            put(s);
+        }
+        {
+            char s[128];
+            std::snprintf(s, sizeof(s), "RPY(deg)=[%.2f, %.2f, %.2f]", roll, pitch, yaw);
             put(s);
         }
         {
