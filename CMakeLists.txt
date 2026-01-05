@@ -63,11 +63,16 @@ if(TARGET_PLATFORM STREQUAL "linux")
 
         add_executable(vbn_featuredetection_test test/vbn_featuredetection_test.cpp ${SOURCES})
         add_executable(vbn_staticposeestimation_test test/vbn_staticposeestimation_test.cpp ${SOURCES})
+
+        # VBN pipeline test with Ground Monitor
+        add_executable(vbn_pipeline_test test/vbn_pipeline_test.cpp tools/groundmonitor/GroundMonitor.cpp ${SOURCES})
+        target_link_libraries(vbn_pipeline_test ${OpenCV_LIBS} pthread)
+        target_include_directories(vbn_pipeline_test PRIVATE ${CMAKE_SOURCE_DIR})
+
     endif()
     
     add_executable(vbn_imagecapturebuild_test test/vbn_imagecapturebuild_test.cpp ${SOURCES})
     add_executable(vbn_imagecapture_test test/vbn_imagecapture_test.cpp ${SOURCES})
-    add_executable(vbn_pipeline_test test/vbn_pipeline_test.cpp ${SOURCES})
 
     # RTOS test executables
     add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
@@ -93,8 +98,6 @@ if(TARGET_PLATFORM STREQUAL "linux")
 
     target_link_libraries(vbn_imagecapturebuild_test pthread)
     target_link_libraries(vbn_imagecapture_test pthread)
-    target_link_libraries(vbn_pipeline_test pthread)
-
 
     # Link RTOS test executables
     target_link_libraries(rtos_task_test pthread)

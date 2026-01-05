@@ -15,173 +15,8 @@
 #include "msg/PoseEstimate.hpp"
 
 #include <linux/videodev2.h> // only for V4L2_PIX_FMT_* in this test
-#include <cmath> // For M_PI
 
-#include <fstream> // Offline plotting
-
-constexpr double RAD2DEG = 180.0 / M_PI;
-
-const bool ENABLE_RANGE_CSV_LOGGING = true;
-
-// -------------------- Monitor task --------------------
-// Low-priority "observer" task:
-// - Non-blocking reads from pose/feature queues (freshest-wins).
-// - Prints at a slow cadence so it doesn't perturb IC/VBN timing.
-// - Computes a rough pose update rate (Hz) from timestamps.
-namespace {
-
-// mono_us: monotonic clock time helper using clock_gettime
-static uint64_t mono_us_test() {
-    timespec ts{};
-    ::clock_gettime(CLOCK_MONOTONIC, &ts);
-    return uint64_t(ts.tv_sec) * 1000000ull + uint64_t(ts.tv_nsec) / 1000ull;
-}
-
-struct MonitorTaskCtx {
-    vbn::FeatureFrameQueue* feat_in = nullptr;   // optional
-    vbn::PoseEstimateQueue* pose_in = nullptr;   // optional
-};
-
-void MonitorTaskEntry(void* arg) {
-    auto* ctx = static_cast<MonitorTaskCtx*>(arg);
-
-    // Defensive: allow running with only pose or only features
-    if (!ctx || (!ctx->feat_in && !ctx->pose_in)) {
-        return;
-    }
-
-    std::cout << "[MONITOR] started\n";
-
-    uint64_t last_print_us = mono_us_test();
-    constexpr uint64_t PRINT_PERIOD_US = 1'000'000;
-
-    uint32_t pose_count = 0;
-    uint32_t feat_count = 0;
-
-    msg::PoseEstimate last_pose{};
-    msg::FeatureFrame last_feat{};
-
-    // CSV LOGGING STATE
-    constexpr uint32_t LOG_N     = 1000;  // ~17.4s @57Hz
-    constexpr uint32_t LOG_EVERY = 1;
-
-    std::ofstream csv;
-    uint32_t k = 0;
-    uint32_t logged = 0;
-
-    if (ENABLE_RANGE_CSV_LOGGING) {
-        csv.open("../tools/data/temp/range_log.csv", std::ios::out | std::ios::trunc);
-        if (!csv) {
-            std::cout << "[MONITOR] ERROR: could not open CSV for writing\n";
-        } else {
-            csv << "k,t_us,range_cm,reproj_rms_px\n";
-        }
-    }
-
-    while (true) {
-        bool got_new_feat = false;
-        bool got_new_pose = false;
-
-        // Drain newest features (non-blocking)
-        if (ctx->feat_in) {
-            msg::FeatureFrame features{};
-            while (ctx->feat_in->try_receive(features)) {
-                last_feat = features;
-                got_new_feat = true;
-                feat_count++;
-            }
-        }
-
-        // Drain newest pose (non-blocking)
-        if (ctx->pose_in) {
-            msg::PoseEstimate pose{};
-            while (ctx->pose_in->try_receive(pose)) {
-                last_pose = pose;
-                got_new_pose = true;
-                pose_count++;
-            }
-        }
-
-        // ---- CSV LOGGING ----
-        if (ENABLE_RANGE_CSV_LOGGING && csv && logged < LOG_N) {
-            if (got_new_pose && (k % LOG_EVERY == 0)) {
-                csv << logged << ","
-                    << last_pose.t_exp_end_us << ","
-                    << (last_pose.range_m * 100.0) << ","
-                    << last_pose.reproj_rms_px << "\n";
-                logged++;
-
-                if (logged == LOG_N) {
-                    csv.flush();
-                    csv.close();
-                    std::cout << "[MONITOR] Wrote range_log.csv (" << LOG_N << " rows)\n";
-                }
-            }
-            k++;
-        }
-
-
-        // ---- MONITOR PRINTING ----
-        const uint64_t now_us = mono_us_test();
-        if (now_us - last_print_us >= PRINT_PERIOD_US) {
-            const double dt_s = double(now_us - last_print_us) * 1e-6;
-            const double pose_hz = (dt_s > 0.0) ? (double(pose_count) / dt_s) : 0.0;
-            const double feat_hz = (dt_s > 0.0) ? (double(feat_count) / dt_s) : 0.0;
-
-            std::cout << "[Monitor] feat_hz=" << feat_hz
-                      << " pose_hz=" << pose_hz <<"\n";
-
-            const bool new_feat = (feat_count > 0);
-            const bool new_pose = (pose_count > 0);
-
-            if (new_feat) {
-                std::cout << "[FD] OK \n";
-                std::cout << "[FD] LEDs detected = " << static_cast<int>(last_feat.led_count) << "\n";
-                std::cout << "[FD] Track state = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST")<< "\n";
-            } else {
-                std::cout << "[FD] NONE \n";
-            }
-
-            if (new_pose) {
-
-                auto q = last_pose.q_C_P;
-                auto t = last_pose.t_CbyP;
-                double az_deg = last_pose.az * RAD2DEG;
-                double el_deg = last_pose.el * RAD2DEG;
-                double roll_deg  = last_pose.roll  * RAD2DEG;
-                double pitch_deg = last_pose.pitch * RAD2DEG;
-                double yaw_deg   = last_pose.yaw   * RAD2DEG;
-                double range_cm  = last_pose.range_m * 100.0; // m → cm
-
-                std::cout << "[SPE] OK \n";
-                std::cout << "      Azimuth  = " << az_deg<< " deg\n";
-                std::cout << "      Elevation = " << el_deg << " deg\n";
-                std::cout << "      Roll  = " << roll_deg  << " deg\n";
-                std::cout << "      Pitch = " << pitch_deg << " deg\n";
-                std::cout << "      Yaw   = " << yaw_deg   << " deg\n";
-                std::cout << "      Range = " << range_cm  << " cm\n";
-                // std::cout << "      Quaternion = [ "<< q[0] << ", " << q[1] << ", " << q[2] << ", " << q[3] <<"]\n";
-                std::cout << "      Reproj RMS = " << last_pose.reproj_rms_px << " px\n";
-            } else {
-                std::cout << "[SPE] NONE \n";
-            }
-
-            std::cout << "\n";
-
-            last_print_us = now_us;
-            pose_count = 0;
-            feat_count = 0;
-        }
-
-    // Yield CPU, don't spin.
-    // Uncomment for Full Speeed
-    //Rtos::SleepMs(100);
-    }
-}
-
-} // namespace
-
-
+#include "tools/groundmonitor/GroundMonitor.hpp"
 
 int main() {
     std::cout << "=== VBN PIPELINE TEST ===\n";
@@ -252,9 +87,18 @@ int main() {
     vbn_ctx.feat_out = &featureFrameQueue;
     vbn_ctx.pose_out = &poseEstimateQueue;
 
-    MonitorTaskCtx mon_ctx{};
+    ground::GroundMonitorCtx mon_ctx{};
     mon_ctx.feat_in = &featureFrameQueue;
     mon_ctx.pose_in = &poseEstimateQueue;
+    mon_ctx.vbn = &vbn;
+    // Configure monitor
+    mon_ctx.cfg.enable_server    = true;   // MJPEG HTTP
+    mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
+    mon_ctx.cfg.enable_csv       = false;  // range_log.csv
+    mon_ctx.cfg.out_dir = "tools/data/tmp/vbn_monitor";
+    mon_ctx.cfg.port = 8080;
+    mon_ctx.cfg.snapshot_period_ms = 200;
+    mon_ctx.cfg.stream_fps = 10;
 
     // ---- TASKS ----
     Rtos::Task ImageCaptureTask;
@@ -266,7 +110,7 @@ int main() {
     ImageCaptureTask.Create("ImageCapture", &vbn::ImageCapture::TaskEntry, &cap_ctx);
     VBNTask.Create("VBN", &vbn::VBNTask::TaskEntry, &vbn_ctx);
     
-    MonitorTask.Create("Monitor", MonitorTaskEntry, &mon_ctx);
+    MonitorTask.Create("Monitor", &ground::TaskEntry, &mon_ctx);
 
     // Join Task (Waits indefinitely)
     ImageCaptureTask.Join();
