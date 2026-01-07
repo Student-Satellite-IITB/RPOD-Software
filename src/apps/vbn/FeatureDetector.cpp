@@ -674,6 +674,9 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             out.state = m_current_state;
             return false; // Detection was unsucessfull due to insufficient blobs
         }
+
+        m_current_state = msg::TrackState::LOST;
+        return false; // Less than 5 blobs after thresholding
     }
 
     // Idea for future FDIR logic here:
