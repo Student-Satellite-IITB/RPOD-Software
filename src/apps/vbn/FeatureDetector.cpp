@@ -613,7 +613,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     out.t_exp_end_us = img.t_exp_end_us;
     out.frame_id    = img.frame_id;
-    out.state       = m_last_state;
+    out.state       = m_current_state;
 
     for (std::size_t i = 0; i < msg::MAX_LEDS; ++i) {
         out.leds[i].u_px = 0.0f;
@@ -623,6 +623,17 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
         out.leds[i].slot_id = 0;
         out.leds[i].valid = 0;
     }
+
+    auto fail_lost = [&]() -> bool {
+        m_current_state = msg::TrackState::LOST;
+        m_last_state    = m_current_state;     // <-- critical
+        m_last_pattern_id = msg::PatternId::UNKNOWN; // optional but sane
+        out.state = m_current_state;
+        out.led_count = 0;
+        out.visible_mask = msg::VISIBLE_NONE;
+        out.pattern_id = msg::PatternId::UNKNOWN;
+        return false;
+    };
 
     // ROI DEFINTION
     defineROI(img);
@@ -634,9 +645,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     if (num_blobs <5) {
         // Less than 5 blobs found → LOST
-        m_current_state = msg::TrackState::LOST;
-        out.state = m_current_state;
-        return false;
+        return fail_lost();
     }
     
     // BLOB-AREA THRESHOLDING
@@ -675,8 +684,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             return false; // Detection was unsucessfull due to insufficient blobs
         }
 
-        m_current_state = msg::TrackState::LOST;
-        return false; // Less than 5 blobs after thresholding
+        return fail_lost();
     }
 
     // Idea for future FDIR logic here:
@@ -715,14 +723,12 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
                 // We can populate items in FeatureFrame that can help identify where detection failed.
 
-                out.state = m_current_state;
-                return false; // Detection was unsucessfull
+                return fail_lost();
                 // frame will be dropped
             }
         }
 
-        out.state = m_current_state;
-        return false; // Detection was unsucessfull
+        return fail_lost();
     }
     // Pattern identification was successful
     m_current_state = msg::TrackState::TRACK;

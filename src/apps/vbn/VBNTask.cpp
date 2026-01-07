@@ -62,8 +62,12 @@ void VBNTask::Run(LiveFrameQueue& live_in, ReleaseFrameQueue& release_out,
 
         // Publish feat/pose to optional tap queues via ctx
         // Future correction: Maybe make this optional
-        if (feat_out && ok_fd) (void)feat_out->try_send(feat);
-        if (pose_out && ok_pose) (void)pose_out->try_send(pose);
+        // if (feat_out && ok_fd) (void)feat_out->try_send(feat);
+        // if (pose_out && ok_pose) (void)pose_out->try_send(pose);
+        if (feat_out) (void)feat_out->try_send(feat);
+        if (pose_out) (void)pose_out->try_send(pose);
+        // Publish even if failed; consumer can check validity flags
+
 
 
         // Copy request happens at frame boundary

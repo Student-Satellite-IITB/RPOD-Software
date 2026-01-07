@@ -443,14 +443,13 @@ void TaskEntry(void* arg) {
             const bool new_pose = (pose_count > 0);
 
             if (new_feat) {
-                std::cout << "[FD] OK\n";
+                std::cout << "[FD] State = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
                 std::cout << "[FD] LEDs detected = " << int(last_feat.led_count) << "\n";
-                std::cout << "[FD] Track state = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
             } else {
                 std::cout << "[FD] NONE\n";
             }
 
-            if (new_pose) {
+            if (new_pose && last_pose.valid) {
                 double az_deg = last_pose.az * RAD2DEG;
                 double el_deg = last_pose.el * RAD2DEG;
                 double roll_deg  = last_pose.roll  * RAD2DEG;
