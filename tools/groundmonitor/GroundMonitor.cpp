@@ -303,16 +303,25 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
     }
 }
 
-static std::ofstream open_csv(const GroundMonitorCtx& ctx) {
+// ---------------- CSV logging ----------------
+static std::ofstream open_csv(
+    const GroundMonitorCtx& ctx,
+    const std::string& filename,      // e.g. "range_log.csv"
+    const std::string& header_line    // e.g. "k,t_us,range_cm,reproj_rms_px\n"
+) {
     std::filesystem::create_directories(ctx.cfg.out_dir);
-    const std::string path = ctx.cfg.out_dir + "/range_log.csv";
+    const std::string path = ctx.cfg.out_dir + "/" + filename;
+
     std::ofstream f(path, std::ios::out | std::ios::trunc);
     if (!f) {
         std::cout << "[MONITOR] ERROR: could not open CSV: " << path
                   << " errno=" << errno << " (" << std::strerror(errno) << ")\n";
-    } else {
-        std::cout << "[MONITOR] CSV open: " << path << "\n";
-        f << "k,t_us,range_cm,reproj_rms_px\n";
+        return f;
+    }
+
+    std::cout << "[MONITOR] CSV open: " << path << "\n";
+    if (!header_line.empty()) {
+        f << header_line;
     }
     return f;
 }
@@ -322,6 +331,7 @@ void TaskEntry(void* arg) {
     auto* ctx = static_cast<GroundMonitorCtx*>(arg);
     if (!ctx || (!ctx->feat_in && !ctx->pose_in)) return;
 
+    // Force snapshots if server enabled 
     ctx->cfg.enable_snapshots = ctx->cfg.enable_server;
 
     std::cout << "[MONITOR] started\n";
@@ -343,7 +353,13 @@ void TaskEntry(void* arg) {
     }
 
     std::ofstream csv;
-    if (ctx->cfg.enable_csv) csv = open_csv(*ctx);
+    if (ctx->cfg.enable_csv) {
+        csv = open_csv(
+            *ctx,
+            "range_log.csv",
+            "k,t_us,range_cm,reproj_rms_px\n"
+        );
+    }
 
     constexpr uint64_t PRINT_PERIOD_US = 1'000'000; // 1Hz Printing
     uint64_t last_print_us = mono_us();
