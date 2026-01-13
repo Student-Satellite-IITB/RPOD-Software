@@ -1,9 +1,13 @@
 #pragma once
 #include <cstdint>
 
+#include "apps/vbn/ImageCapture.hpp"
 #include "apps/vbn/VBNTask.hpp"
+#include "apps/vbn/RNAVFilter.hpp"
+
 #include "msg/FeatureFrame.hpp"
 #include "msg/PoseEstimate.hpp"
+#include "msg/RNAVState.hpp"
 
 #include <string>
 
@@ -36,7 +40,9 @@ struct GroundMonitorConfig {
 struct GroundMonitorCtx {
     vbn::FeatureFrameQueue* feat_in = nullptr;
     vbn::PoseEstimateQueue* pose_in = nullptr;
+    rnav::StateEstimateQueue* state_in = nullptr;
     vbn::VBNTask* vbn = nullptr;              // needed for RequestCopy/TryReceiveCopied/ReleaseCopied
+    rnav::RNAVFilter* filter = nullptr;
     GroundMonitorConfig cfg;
 };
 

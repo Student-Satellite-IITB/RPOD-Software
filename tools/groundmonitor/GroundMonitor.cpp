@@ -367,15 +367,18 @@ void TaskEntry(void* arg) {
 
     uint32_t pose_count = 0;
     uint32_t feat_count = 0;
+    uint32_t state_count = 0;
 
     msg::PoseEstimate last_pose{};
     msg::FeatureFrame last_feat{};
+    msg::RNAVState last_state{};
 
     uint32_t k = 0;
     uint32_t logged = 0;
 
     while (true) {
         bool got_new_pose = false;
+        bool got_new_state = false;
 
         if (ctx->feat_in) {
             msg::FeatureFrame f{};
@@ -391,6 +394,15 @@ void TaskEntry(void* arg) {
                 last_pose = p;
                 got_new_pose = true;
                 pose_count++;
+            }
+        }
+
+        if (ctx->state_in){
+            msg::RNAVState s{};
+            while (ctx->state_in->try_receive(s)) {
+                last_state = s;
+                got_new_state = true;
+                state_count++;
             }
         }
 
@@ -457,6 +469,7 @@ void TaskEntry(void* arg) {
 
             const bool new_feat = (feat_count > 0);
             const bool new_pose = (pose_count > 0);
+            const bool new_state = (state_count > 0);
 
             if (new_feat) {
                 std::cout << "[FD] State = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
@@ -483,6 +496,48 @@ void TaskEntry(void* arg) {
                 std::cout << "      Reproj RMS = " << last_pose.reproj_rms_px << " px\n";
             } else {
                 std::cout << "[SPE] NONE\n";
+            }
+
+            
+            if (new_state) {
+                std::cout << "[RNAV] OK\n";
+
+                std::cout << std::fixed << std::setprecision(3);
+
+                std::cout << " Relative Position r_nav [m]   = ["
+                        << last_state.r_nav[0] << ", "
+                        << last_state.r_nav[1] << ", "
+                        << last_state.r_nav[2] << "]\n";
+
+                std::cout << " Relative Velocity v_nav [m/s] = ["
+                        << last_state.v_nav[0] << ", "
+                        << last_state.v_nav[1] << ", "
+                        << last_state.v_nav[2] << "]\n";
+
+                std::cout << " Relative Orientation q_rel    = ["
+                        << last_state.q_rel[0] << ", "
+                        << last_state.q_rel[1] << ", "
+                        << last_state.q_rel[2] << ", "
+                        << last_state.q_rel[3] << "]\n";
+
+                std::cout << " Relative Rate w_rel [rad/s]   = ["
+                        << last_state.w_rel[0] << ", "
+                        << last_state.w_rel[1] << ", "
+                        << last_state.w_rel[2] << "]\n";
+
+                // Covariance diagonals (assumed 12-state ordering):
+                // [pos(0..2), vel(3..5), angle_error(6..8), rate(9..11)]
+                auto Pdiag = [&](int i) -> float { return last_state.P[i * 12 + i]; };
+
+                std::cout << " Covariance diag (P):\n";
+                std::cout << "   pos  [m^2]        = ["
+                        << Pdiag(0) << ", " << Pdiag(1) << ", " << Pdiag(2) << "]\n";
+                std::cout << "   vel  [(m/s)^2]    = ["
+                        << Pdiag(3) << ", " << Pdiag(4) << ", " << Pdiag(5) << "]\n";
+                std::cout << "   ang  [rad^2]      = ["
+                        << Pdiag(6) << ", " << Pdiag(7) << ", " << Pdiag(8) << "]\n";
+                std::cout << "   rate [(rad/s)^2]  = ["
+                        << Pdiag(9) << ", " << Pdiag(10) << ", " << Pdiag(11) << "]\n";
             }
 
             std::cout << "\n";
