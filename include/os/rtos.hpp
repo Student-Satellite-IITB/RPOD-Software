@@ -1,11 +1,20 @@
 #pragma once
 #include <cstddef> // Required for size_t
+#include <cstdint> // Required for uint64_t
 
 namespace Rtos {
 
 constexpr int MAX_TIMEOUT = -1; // Infinite block
 
+uint64_t NowUs();
 void SleepMs(int ms);
+
+// Absolute deadline sleep in same timebase as NowUs()
+void SleepUntilUs(uint64_t deadline_us);
+// Convenience wrapper
+inline void SleepUntilMs(uint64_t deadline_ms) {
+    SleepUntilUs(deadline_ms * 1000ULL);
+}
 
 //== Task abstraction ==//
 // This class provides a simple task wrapper
@@ -99,61 +108,86 @@ private:
 template <typename T, size_t Capacity>
 class Queue {
 public:
-    Queue(bool overwrite = false) : head(0), tail(0), overwrite_(overwrite) {}
+    Queue(bool overwrite = false) : head(0), tail(0), count_(0), overwrite_(overwrite) {}
 
     bool send(const T& item, int timeout_ms = -1) {
-        bool isFull = false;
 
         if(!overwrite_){
             if(!spaceAvailable.take(timeout_ms)){
                 return false;
             };  // Wait for space
+
+            lock.lock();
+            buffer[head] = item;
+            head = (head + 1) % Capacity;
+            count_++;                      // <= NEW: keep count in sync
+            wasOverwritten = false;
+            lock.unlock();
+
+            dataAvailable.give();
+            return true;
         }
         else{
-            if(!spaceAvailable.try_take()){
-                isFull = true; // Queue is full, will overwrite
-                lock.lock();
-                tail = (tail + 1) % Capacity; // Overwrite oldest item
-                lock.unlock();
+            // overwrite_ == true : do NOT touch spaceAvailable at all
+            lock.lock();
+            const bool wasFull = (count_ == Capacity);
+            if (wasFull) {
+                // drop oldest (advance tail), count_ stays == Capacity
+                tail = (tail + 1) % Capacity;
+                wasOverwritten = true;
+            } else {
+                // room available
+                count_++;
+                wasOverwritten = false;
             }
-        }
-        
-        lock.lock();
-        buffer[head] = item;
-        head = (head + 1) % Capacity;
-        wasOverwritten = isFull; // Track if last item was overwritten
-        lock.unlock();
-        if(!isFull) {
-            dataAvailable.give(); // Signal data is available
-        }
-        return true;
+
+            buffer[head] = item;
+            head = (head + 1) % Capacity;
+
+            lock.unlock();
+
+            // Only signal new data if we increased occupancy (i.e., not overwriting)
+            if (!wasFull) dataAvailable.give();
+            return true;
+        }        
     }
 
     bool try_send(const T& item) {
-        bool isFull = false;
 
         if(!overwrite_){
             if (!spaceAvailable.try_take()) return false;
+
+            lock.lock();
+            buffer[head] = item;
+            head = (head + 1) % Capacity;
+            count_++;
+            wasOverwritten = false;
+            lock.unlock();
+
+            dataAvailable.give();
+            return true;
         }
         else{
-            if(!spaceAvailable.try_take()){
-                isFull = true; // Queue is full, will overwrite
-                lock.lock();
-                tail = (tail + 1) % Capacity; // Overwrite oldest item
-                lock.unlock();
+            // overwrite_ == true : always succeeds
+            lock.lock();
+
+            const bool wasFull = (count_ == Capacity);
+            if (wasFull) {
+                tail = (tail + 1) % Capacity;
+                wasOverwritten = true;
+            } else {
+                count_++;
+                wasOverwritten = false;
             }
-        }
 
-        lock.lock();
-        buffer[head] = item;
-        head = (head + 1) % Capacity;
-        wasOverwritten = isFull; // Track if last item was overwritten
-        lock.unlock();
+            buffer[head] = item;
+            head = (head + 1) % Capacity;
 
-        if(!isFull) {
-            dataAvailable.give(); // Signal data is available
+            lock.unlock();
+
+            if (!wasFull) dataAvailable.give();
+            return true;
         }
-        return true;
     }
 
     bool receive(T& item, int timeout_ms = -1) {
@@ -161,8 +195,9 @@ public:
             lock.lock();
             item = buffer[tail];
             tail = (tail + 1) % Capacity;
+            if (count_ > 0) count_--;
             lock.unlock();
-            spaceAvailable.give(); // Signal space is available
+            if (!overwrite_) spaceAvailable.give();  // Signal space is available only in non-overwrite
             return true;
         }
         else return false;
@@ -173,13 +208,14 @@ public:
         lock.lock();
         item = buffer[tail];
         tail = (tail + 1) % Capacity;
+        if (count_ > 0) count_--;
         lock.unlock();
-        spaceAvailable.give();
+        if (!overwrite_) spaceAvailable.give(); // Signal space is available only in non-overwrite
         return true;
     }
 
 
-    // Implementation for fidning out 
+    // Implementation for finding out 
     // if last send was overwritten
     // may or may not be needed (can remove if not)
 
@@ -193,6 +229,7 @@ public:
 private:
     T buffer[Capacity];
     size_t head, tail;
+    size_t count_;                 // Occupancy (0..Capacity)
     bool overwrite_;  // Whether to overwrite oldest item when full
     bool wasOverwritten = false; // Track if last item was overwritten
     Mutex lock;

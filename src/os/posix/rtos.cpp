@@ -3,12 +3,61 @@
 #include <unistd.h>   // for usleep
 #include <iostream>   // for std::cerr
 #include <semaphore.h>
+#include <time.h> // For clock
+
+namespace{
+
+// Convert absolute microseconds (same epoch as CLOCK_MONOTONIC) to timespec
+static inline timespec us_to_timespec(uint64_t us) {
+    timespec ts;
+    ts.tv_sec  = (time_t)(us / 1000000ULL);
+    ts.tv_nsec = (long)((us % 1000000ULL) * 1000ULL);
+    return ts;
+}
+
+static inline uint64_t monotonic_now_us() {
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)(ts.tv_nsec / 1000ULL);
+}
+
+} // namespace
+
 
 namespace Rtos {
 
+uint64_t NowUs() {
+    return monotonic_now_us();
+}
+
 // Sleep utility
 void SleepMs(int ms) {
-    usleep(ms * 1000);  // Convert ms to microseconds
+    if (ms <= 0) return;
+
+    timespec req;
+    req.tv_sec  = ms / 1000;
+    req.tv_nsec = (long)(ms % 1000) * 1000000L;
+
+    while (nanosleep(&req, &req) == -1 && errno == EINTR) {
+        // retry with remaining time
+    }
+}
+
+void SleepUntilUs(uint64_t deadline_us) {
+    // If already past deadline, return immediately
+    const uint64_t now = monotonic_now_us();
+    if (deadline_us <= now) return;
+
+    timespec ts = us_to_timespec(deadline_us);
+
+    // Absolute sleep. If interrupted, retry.
+    while (true) {
+        int rc = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr);
+        if (rc == 0) return;
+        if (rc == EINTR) continue;
+        // Other errors: just return (don't spin forever)
+        return;
+    }
 }
 
 // =======================

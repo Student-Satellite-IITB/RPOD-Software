@@ -1,4 +1,10 @@
-# VBN EVALUATOR
+# EVALUATOR
+
+The eval directory contains the following evaluation scripts
+- `vbn_evaluator.py`
+- `estimator_evaluator.py`
+
+## 1. VBN EVALUATOR
 
 This directory contains scripts that evaluate the outputs of the VBN pipeline by comparing `results.txt` against ground truth:
 
@@ -50,3 +56,9 @@ The evaluator writes an evaluation table (CSV) for batch runs (e.g., per-case ce
 
 - Static Pose Estimator (SPE) evaluation using rotation-error metrics from DCMs (not Euler angles)
 - HW dataset evaluation conventions (case-level ground truth format, calibration metadata, etc.)
+
+## 2. ESTIMATOR EVALUATOR
+
+Evaluates the output of the test: `/test/rnav_rnavfilter_test.cpp` which creates the csv file: `rnav_filter_log.csv` at  `/tools/data/tmp/`. The evaluator reads the CSV and prints statistics on the terminal and also stores plots in `/tools/data/tmp/plots`.
+
+---

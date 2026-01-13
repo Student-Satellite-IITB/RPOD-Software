@@ -74,6 +74,8 @@ if(TARGET_PLATFORM STREQUAL "linux")
     add_executable(vbn_imagecapturebuild_test test/vbn_imagecapturebuild_test.cpp ${SOURCES})
     add_executable(vbn_imagecapture_test test/vbn_imagecapture_test.cpp ${SOURCES})
 
+    add_executable(rnav_rnavfilter_test test/rnav_rnavfilter_test ${SOURCES})
+
     # RTOS test executables
     add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
     add_executable(rtos_mutex_test test/rtos_mutex_test.cpp src/os/posix/rtos.cpp)
@@ -98,6 +100,8 @@ if(TARGET_PLATFORM STREQUAL "linux")
 
     target_link_libraries(vbn_imagecapturebuild_test pthread)
     target_link_libraries(vbn_imagecapture_test pthread)
+
+    target_link_libraries(rnav_rnavfilter_test pthread)
 
     # Link RTOS test executables
     target_link_libraries(rtos_task_test pthread)
