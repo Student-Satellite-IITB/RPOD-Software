@@ -44,7 +44,7 @@ int main() {
 
     vbn::FeatureDetectorConfig fd_cfg{};
     fd_cfg.BIN_THRESH = 250; // For 10-Bit Image
-    fd_cfg.MIN_BLOB_AREA = 50;
+    fd_cfg.MIN_BLOB_AREA = 20;
     fd_cfg.MAX_BLOB_AREA = 20000;
     fd_cfg.PATTERN_MAX_SCORE = 150.0f;
     fd_cfg.MAX_OFFSET_SCORE = 0.6f;
@@ -114,7 +114,7 @@ int main() {
 
     ground::GroundMonitorCtx mon_ctx{};
     mon_ctx.feat_in = &featureFrameQueue;
-    mon_ctx.pose_in = &poseEstimateQueue;
+    mon_ctx.pose_in = nullptr;
     mon_ctx.state_in = &stateEstimatequeue;
     mon_ctx.vbn = &vbn;
     mon_ctx.filter = &filter;
