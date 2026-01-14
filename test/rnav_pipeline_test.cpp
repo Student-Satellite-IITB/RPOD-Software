@@ -115,8 +115,10 @@ int main() {
     ground::GroundMonitorCtx mon_ctx{};
     mon_ctx.feat_in = &featureFrameQueue;
     mon_ctx.pose_in = &poseEstimateQueue;
+    mon_ctx.state_in = &stateEstimatequeue;
     mon_ctx.vbn = &vbn;
     mon_ctx.filter = &filter;
+    
     // Configure monitor
     mon_ctx.cfg.enable_server    = true;   // MJPEG HTTP
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
