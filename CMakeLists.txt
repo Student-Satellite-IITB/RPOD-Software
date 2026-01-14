@@ -79,7 +79,7 @@ if(TARGET_PLATFORM STREQUAL "linux")
     add_executable(vbn_imagecapturebuild_test test/vbn_imagecapturebuild_test.cpp ${SOURCES})
     add_executable(vbn_imagecapture_test test/vbn_imagecapture_test.cpp ${SOURCES})
 
-    add_executable(rnav_rnavfilter_test test/rnav_rnavfilter_test ${SOURCES})
+    add_executable(rnav_rnavfilter_test test/rnav_rnavfilter_test.cpp ${SOURCES})
 
     # RTOS test executables
     add_executable(rtos_task_test test/rtos_task_test.cpp src/os/posix/rtos.cpp)
