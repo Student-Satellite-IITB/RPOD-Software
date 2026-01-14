@@ -12,12 +12,12 @@ cd RPOD-Software
 mkdir build
 cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/linux-toolchain.cmake
-make
+cmake --build . --target <MyExecutable>
 ```
 This creates the executable. \
 Ensure there is file called simulated-image.png in test/ folder \
 Now run the executable
 ```bash
-./rpod_test_pipeline
+./<MyExecutable>
 ```
 Check the annotated image in the test directory.
