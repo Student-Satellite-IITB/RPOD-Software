@@ -117,7 +117,6 @@ int main() {
     mon_ctx.pose_in = nullptr;
     mon_ctx.state_in = &stateEstimatequeue;
     mon_ctx.vbn = &vbn;
-    mon_ctx.filter = &filter;
     
     // Configure monitor
     mon_ctx.cfg.enable_server    = true;   // MJPEG HTTP

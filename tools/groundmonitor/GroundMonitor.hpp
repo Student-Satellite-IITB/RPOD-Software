@@ -42,7 +42,6 @@ struct GroundMonitorCtx {
     vbn::PoseEstimateQueue* pose_in = nullptr;
     rnav::StateEstimateQueue* state_in = nullptr;
     vbn::VBNTask* vbn = nullptr;              // needed for RequestCopy/TryReceiveCopied/ReleaseCopied
-    rnav::RNAVFilter* filter = nullptr;
     GroundMonitorConfig cfg;
 };
 
