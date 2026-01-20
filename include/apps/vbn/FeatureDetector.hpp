@@ -76,6 +76,7 @@ private:
 
     LedArray m_leds;
     BlobArray m_blobs;
+    std::size_t m_featurecount;
 
     LedArray m_last_leds{};
 
