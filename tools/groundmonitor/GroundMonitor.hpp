@@ -13,6 +13,13 @@
 
 namespace ground {
 
+enum class Test : uint8_t {
+    NONE = 0,
+    RANGE_LOG,
+    CENTROID_LOG,
+    //ADD MORE
+};
+
 // -------------------- Monitor task --------------------
 // Low-priority "observer" task:
 // - Non-blocking reads from pose/feature queues (freshest-wins).
@@ -25,6 +32,7 @@ struct GroundMonitorConfig {
     std::string  out_dir = "tools/data/tmp/vbn_monitor";
     uint32_t log_n = 1000;
     uint32_t log_every = 1;
+    Test testcase = Test::NONE;
 
     // Snapshots (copy from VBNTask)
     bool enable_snapshots = false;

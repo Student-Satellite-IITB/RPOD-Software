@@ -4,6 +4,8 @@
 #include "msg/ImageFrame.hpp"
 #include "msg/FeatureFrame.hpp"
 
+
+
 namespace vbn {
 
 // ---------------------------------------------------------------------------
@@ -29,7 +31,6 @@ struct FeatureDetectorConfig {
     
 };
 
-
 // ---------------------------------------------------------------------------
 // FeatureDetector: stateless API from outside, stateful tracker inside.
 // Call detect() once per image.
@@ -48,10 +49,35 @@ public:
     // Core API: consume one ImageFrame, produce one FeatureFrame.
     bool detect(const msg::ImageFrame& img, msg::FeatureFrame& out);
 
+    enum class Status : uint8_t {
+        OK = 0,
+
+        NOT_ENOUGH_RAW_BLOBS,
+        NOT_ENOUGH_LED_BLOBS,
+        UNKNOWN_PATTERN,
+
+        //ADD MORE
+    };
+
+    Status lastStatus() const { return m_status; }
+
+
 private:
     FeatureDetectorConfig m_cfg{};
 
-    std::array<msg::Led2D, msg::MAX_LEDS> m_last_leds{};
+    static constexpr float ROI_MIN_HALF_WIDTH = 10.0f;
+    static constexpr std::size_t MAX_BLOBS = 32;
+    static constexpr std::size_t MAX_LEDS = 10;
+    static_assert(MAX_BLOBS <= msg::MAX_FEATS && MAX_LEDS <= msg::MAX_FEATS, "MAX_LEDS or MAX_BLOBS violating FeatureFrame MAX_FEAT limit");
+
+    using BlobArray = std::array<msg::Feature, MAX_BLOBS>; //type alias for arrray of blobs
+    using LedArray = std::array<msg::Feature, MAX_LEDS>; //type alias for array of leds
+    using InnerLedCandidates = std::array<msg::Feature, 5>; // type alias for Inner LED Candidates
+
+    LedArray m_leds;
+    BlobArray m_blobs;
+
+    LedArray m_last_leds{};
 
     msg::TrackState m_current_state = msg::TrackState::LOST;
     msg::TrackState m_last_state = msg::TrackState::LOST;
@@ -65,39 +91,32 @@ private:
     int m_roi_v_min = 0;
     int m_roi_v_max = 0;
 
-    static constexpr float ROI_MIN_HALF_WIDTH = 10.0f;
-
-    void defineROI(const msg::ImageFrame& img);
-
-    struct Blob {
-    float u_cx;      // centroid u in pixel coords (float)
-    float v_cx;      // centroid v in pixel coords
-    float intensity; // sum of pixel intensities
-    int   area;      // number of pixels in blob
-    };
-
-    static constexpr std::size_t MAX_BLOBS = 32;
     // Maximum image size for visited map
     // Have to ensure this is large enough
     static constexpr int VISITED_MAX_W = 1280;
     static constexpr int VISITED_MAX_H = 800;
 
-    using BlobArray = std::array<Blob, MAX_BLOBS>; //type alias for arrray of blobs
+    msg::PatternId m_last_pattern_id = msg::PatternId::UNKNOWN;
+    // FDIR
+    Status m_status = Status::OK;
+
+
+    void defineROI(const msg::ImageFrame& img);
+
     std::size_t detectBlobs(const msg::ImageFrame& img, BlobArray& blobs);
     std::size_t thresholdBlobs(BlobArray& blobs, std::size_t blob_count);
-
-    msg::PatternId m_last_pattern_id = msg::PatternId::UNKNOWN;
-
     
-    bool InnerPatternArrange(std::array<Blob,5>& combo);
-    float evaluateInnerCross(const std::array<Blob,5>& combo);
-    using LedArray = std::array<msg::Led2D, msg::MAX_LEDS>; //type alias for array of leds
+    bool InnerPatternArrange(InnerLedCandidates& combo);
+    float evaluateInnerCross(const InnerLedCandidates& combo);
     bool identifyPattern(const BlobArray& blobs,
                          std::size_t blob_count,
                          LedArray& leds,
                          std::size_t& led_count,
                          msg::PatternId& pattern_id,
                          float& confidence);
+
+    // Fail
+    bool fail(Status s, msg::FeatureFrame& out);
     
 
 };

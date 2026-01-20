@@ -6,7 +6,7 @@
 int main() {
 
     // Choose a base name once
-    std::string base = "../tools/range0_exp200_1";
+    std::string base = "../tools/data/cases/sim/tmp_case/image";
 
     // Build input and output filenames from it
     std::string input_path  = base + ".png";
@@ -19,15 +19,18 @@ int main() {
     }
     if (!img.isContinuous()) img = img.clone();
 
-    msg::ImageFrame input;
-    input.data   = img.data;
-    input.width  = img.cols;
-    input.height = img.rows;
-    input.stride = img.cols;
+    msg::ImageFrame input{};
+    input.data         = img.data; // pointer to raw bytes (can represent 8 or 16-bit containers)
+    input.width        = static_cast<uint32_t>(img.cols);
+    input.height       = static_cast<uint32_t>(img.rows);
+    input.stride       = static_cast<uint32_t>(img.step);        // bytes per row
+    input.bytes_per_px = static_cast<uint8_t>(img.elemSize1());  // 1 for 8U, 2 for 16U
+    input.bit_depth    = static_cast<uint8_t>(8 * img.elemSize1()); // container bit-depth (8 or 16)
+    input.bit_shift    = 0; // LSB aligned containers
 
     vbn::FeatureDetectorConfig det_cfg;
-    det_cfg.BIN_THRESH = 40; // Example: adjust threshold if needed
-    det_cfg.MIN_BLOB_AREA = 100;
+    det_cfg.BIN_THRESH = 250; // Example: adjust threshold if needed
+    det_cfg.MIN_BLOB_AREA = 10;
     det_cfg.MAX_BLOB_AREA = 20000;
     det_cfg.PATTERN_MAX_SCORE = 150.0f;
     det_cfg.MAX_OFFSET_SCORE = 10.0f;
@@ -44,19 +47,20 @@ int main() {
     std::chrono::duration<double, std::micro> dt = t1 - t0;
 
     std::cout << "detect() returned = " << (ok ? "TRUE" : "FALSE") << "\n";
-    std::cout << "LEDs detected = " << static_cast<int>(out.led_count) << "\n";
+    std::cout << "LEDs detected = " << static_cast<int>(out.feat_count) << "\n";
     std::cout << "Track state = "
               << (out.state == msg::TrackState::TRACK ? "TRACK" : "LOST")
               << "\n";
     std::cout << "detect() time = " << dt.count() / 1000.0 << " ms\n";
 
+    
     // Convert to color for annotation
     cv::Mat annotated;
     cv::cvtColor(img, annotated, cv::COLOR_GRAY2BGR);
 
     // Draw circles + index labels
-    for (int i = 0; i < static_cast<int>(out.led_count); ++i) {
-        const auto& L = out.leds[i];
+    for (int i = 0; i < static_cast<int>(out.feat_count); ++i) {
+        const auto& L = out.feats[i];
 
         cv::Point pt(static_cast<int>(L.u_px),
                      static_cast<int>(L.v_px));

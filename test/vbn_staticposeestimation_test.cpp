@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double, std::micro> dt = t1 - t0;
 
     std::cout << "[FD] detect() returned = " << (fd_ok ? "TRUE" : "FALSE") << "\n";
-    std::cout << "[FD] LEDs detected = " << static_cast<int>(features.led_count) << "\n";
+    std::cout << "[FD] LEDs detected = " << static_cast<int>(features.feat_count) << "\n";
     std::cout << "[FD] Track state = "
               << (features.state == msg::TrackState::TRACK ? "TRACK" : "LOST")
               << "\n";
@@ -126,14 +126,14 @@ int main(int argc, char** argv) {
     rf << "\n[FD]\n";
     rf << "fd_ok = " << (fd_ok ? 1 : 0) << "\n";
     rf << "fd_track_state = " << (features.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
-    rf << "fd_led_count = " << static_cast<int>(features.led_count) << "\n";
+    rf << "fd_led_count = " << static_cast<int>(features.feat_count) << "\n";
     rf << "fd_time_ms = " << dt.count() / 1000.0 << "\n";
     rf << "fd_bin_thresh = " << det_cfg.BIN_THRESH << "\n";
     rf << "fd_min_blob_area = " << det_cfg.MIN_BLOB_AREA << "\n";
     rf << "fd_max_blob_area = " << det_cfg.MAX_BLOB_AREA << "\n";
 
-    for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
-        const auto& L = features.leds[i];
+    for (int i = 0; i < static_cast<int>(features.feat_count); ++i) {
+        const auto& L = features.feats[i];
         rf << "fd_led" << i << ".id = " << static_cast<int>(L.slot_id) << "\n";
         rf << "fd_led" << i << ".u_px = " << L.u_px << "\n";
         rf << "fd_led" << i << ".v_px = " << L.v_px << "\n";
@@ -189,8 +189,8 @@ int main(int argc, char** argv) {
     cv::cvtColor(annotated8, annotated, cv::COLOR_GRAY2BGR);
 
 
-    for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
-        const auto& L = features.leds[i];
+    for (int i = 0; i < static_cast<int>(features.feat_count); ++i) {
+        const auto& L = features.feats[i];
 
         cv::Point pt(static_cast<int>(L.u_px),
                      static_cast<int>(L.v_px));
@@ -220,7 +220,7 @@ int main(int argc, char** argv) {
         );
     }
 
-    if (!fd_ok || features.led_count == 0) {
+    if (!fd_ok || features.feat_count == 0) {
         std::cerr << "[MAIN] Feature detection failed or no LEDs found. Exiting.\n";
 
         // Still save annotated + results for debugging

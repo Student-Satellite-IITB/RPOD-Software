@@ -255,8 +255,8 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
     cv::line(bgr, {bgr.cols/2, 0}, {bgr.cols/2, bgr.rows-1}, {255,255,255}, 1);
 
     // LEDs annotatiion
-    for (int i = 0; i < (int)feat.led_count; ++i) {
-        const auto& L = feat.leds[i];
+    for (int i = 0; i < (int)feat.feat_count; ++i) {
+        const auto& L = feat.feats[i];
         cv::Point pt((int)std::lround(L.u_px), (int)std::lround(L.v_px));
         cv::circle(bgr, pt, 20, cv::Scalar(0,0,255), 2);
         cv::drawMarker(bgr, pt, cv::Scalar(0,255,0), cv::MARKER_CROSS, 50, 2);
@@ -272,7 +272,7 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
     };
 
     put("FD: " + std::string(feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST")
-        + " leds=" + std::to_string((int)feat.led_count));
+        + " leds=" + std::to_string((int)feat.feat_count));
 
     if (pose.valid) {
         const double az    = pose.az    * RAD2DEG;
@@ -354,11 +354,20 @@ void TaskEntry(void* arg) {
 
     std::ofstream csv;
     if (ctx->cfg.enable_csv) {
-        csv = open_csv(
-            *ctx,
-            "range_log.csv",
-            "k,t_us,range_cm,reproj_rms_px\n"
-        );
+        if(ctx->cfg.testcase == Test::RANGE_LOG){
+            csv = open_csv(
+                *ctx,
+                "range_log.csv",
+                "k,t_us,range_cm,reproj_rms_px\n"
+            );
+        }
+        if(ctx->cfg.testcase == Test::CENTROID_LOG){
+            csv = open_csv(
+                *ctx,
+                "centroid_log.csv",
+                "k,t_us,blob_i,u_px,v_px,area,intensity\n"
+            );
+        }
     }
 
     constexpr uint64_t PRINT_PERIOD_US = 1'000'000; // 1Hz Printing
@@ -377,6 +386,7 @@ void TaskEntry(void* arg) {
     uint32_t logged = 0;
 
     while (true) {
+        bool got_new_feat = false;
         bool got_new_pose = false;
         bool got_new_state = false;
 
@@ -384,6 +394,7 @@ void TaskEntry(void* arg) {
             msg::FeatureFrame f{};
             while (ctx->feat_in->try_receive(f)) {
                 last_feat = f;
+                got_new_feat = true;
                 feat_count++;
             }
         }
@@ -407,17 +418,50 @@ void TaskEntry(void* arg) {
         }
 
         if (ctx->cfg.enable_csv && csv && logged < ctx->cfg.log_n) {
-            if (got_new_pose && (k % ctx->cfg.log_every == 0)) {
-                csv << logged << "," << last_pose.t_exp_end_us << ","
-                    << (last_pose.range_m * 100.0) << "," << last_pose.reproj_rms_px << "\n";
-                logged++;
-                if (logged == ctx->cfg.log_n) {
-                    csv.flush();
-                    csv.close();
-                    std::cout << "[MONITOR] Wrote range_log.csv (" << ctx->cfg.log_n << " rows)\n";
+
+            // -------- RANGE LOG (unchanged behavior) --------
+            if (ctx->cfg.testcase == Test::RANGE_LOG) {
+                if (got_new_pose && (k % ctx->cfg.log_every == 0)) {
+                    csv << logged << "," << last_pose.t_exp_end_us << ","
+                        << (last_pose.range_m * 100.0) << ","
+                        << last_pose.reproj_rms_px << "\n";
+                    logged++;
+                    if (logged == ctx->cfg.log_n) {
+                        csv.flush();
+                        csv.close();
+                        std::cout << "[MONITOR] Wrote range_log.csv (" << ctx->cfg.log_n << " rows)\n";
+                    }
                 }
+                k++;
             }
-            k++;
+
+            // -------- CENTROID LOG (blob centroids only) --------
+            else if (ctx->cfg.testcase == Test::CENTROID_LOG) {
+                if (got_new_feat && (k % ctx->cfg.log_every == 0)) {
+
+                    // Log ALL blobs/features as-is (no validity/pattern assumptions)
+                    const uint8_t n = last_feat.feat_count;
+                    for (uint8_t i = 0; i < n; ++i) {
+                        const msg::Feature& b = last_feat.feats[i];
+                        csv << logged << ","
+                            << last_feat.t_exp_end_us << ","
+                            << int(i) << ","
+                            << b.u_px << ","
+                            << b.v_px << ","
+                            << b.area << ","
+                            << b.intensity << "\n";
+                    }
+
+                    // Here: logged counts "frames logged", not "rows"
+                    logged++;
+                    if (logged == ctx->cfg.log_n) {
+                        csv.flush();
+                        csv.close();
+                        std::cout << "[MONITOR] Wrote centroid_log.csv (" << ctx->cfg.log_n << " frames)\n";
+                    }
+                }
+                k++;
+            }
         }
 
         const uint64_t now = mono_us();
@@ -473,7 +517,7 @@ void TaskEntry(void* arg) {
 
             if (new_feat) {
                 std::cout << "[FD] State = " << (last_feat.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
-                std::cout << "[FD] LEDs detected = " << int(last_feat.led_count) << "\n";
+                std::cout << "[FD] LEDs detected = " << int(last_feat.feat_count) << "\n";
             } else {
                 std::cout << "[FD] NONE\n";
             }

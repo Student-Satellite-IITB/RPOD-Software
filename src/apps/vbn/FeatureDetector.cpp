@@ -43,7 +43,9 @@ void vbn::FeatureDetector::reset() {
     for (auto& led : m_last_leds) {
         led.u_px      = 0.0f;
         led.v_px      = 0.0f;
-        led.strength  = 0.0f;
+        led.area      = 0;
+        led.intensity = 0.0f;
+
         led.pattern_id= msg::PatternId::UNKNOWN;
         led.slot_id   = 0;
         led.valid     = 0;
@@ -215,15 +217,15 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
 
             // Seeding Blob
 
-            Blob& B = blobs[blob_count];
+            msg::Feature& B = blobs[blob_count];
             // B is the current seeded blob where blob_count is the index
             // of the next blob to be detected due to the fact that
             // counting starts from 0 so if 1 blob is detected, it is already leading to index 1 which is the second blob
 
-            B.u_cx = 0.0f;
-            B.v_cx = 0.0f;
-            B.intensity = 0.0f;
+            B.u_px = 0.0f;
+            B.v_px = 0.0f;
             B.area = 0;
+            B.intensity = 0.0f;
 
             // clearing pixel stack
             sp = 0;
@@ -245,10 +247,10 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
                 const float w  = static_cast<float>(p_val);
                 const float w2 = w * w; // same as pow(w,2) but faster/clearer
 
-                B.u_cx += static_cast<float>(pu) * w2;
-                B.v_cx += static_cast<float>(pv) * w2;
-                B.intensity += w2;
+                B.u_px += static_cast<float>(pu) * w2;
+                B.v_px += static_cast<float>(pv) * w2;
                 B.area += 1;
+                B.intensity += w2;
 
                 // Explore 8-connected neighbors
                 for (int n = 0; n < 8; ++n){
@@ -285,12 +287,12 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
             // Centroid extraction
 
             if (B.intensity > 0.0f) {
-                B.u_cx /= B.intensity;
-                B.v_cx /= B.intensity;
+                B.u_px /= B.intensity;
+                B.v_px /= B.intensity;
             } else {
                 // Should not happen, but a fallback helps debugging
-                B.u_cx = static_cast<float>(u);
-                B.v_cx = static_cast<float>(v);
+                B.u_px = static_cast<float>(u);
+                B.v_px = static_cast<float>(v);
             }
 
             // One blob fully extracted
@@ -305,7 +307,7 @@ std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, std::size_t b
     std::size_t led_blob_count = 0;
 
     for (std::size_t i = 0; i < blob_count; ++i) {
-        const Blob& B = blobs[i];
+        const msg::Feature& B = blobs[i];
 
         // Heurestic based conditions on blob filtering
         if (B.area < m_cfg.MIN_BLOB_AREA) continue;
@@ -319,7 +321,7 @@ std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, std::size_t b
     return led_blob_count;
 }
 
-bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
+bool vbn::FeatureDetector::InnerPatternArrange(InnerLedCandidates& combo){
     //   index 0 -> TOP
     //   index 1 -> LEFT
     //   index 2 -> BOTTOM
@@ -330,10 +332,10 @@ bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     int idx_bottom = 0;
 
     for(int i = 1; i < 5; ++i){
-        if (combo[i].v_cx < combo[idx_top].v_cx){
+        if (combo[i].v_px < combo[idx_top].v_px){
             idx_top = i;
         }
-        if (combo[i].v_cx > combo[idx_bottom].v_cx){
+        if (combo[i].v_px > combo[idx_bottom].v_px){
             idx_bottom = i;
         }
     }
@@ -359,10 +361,10 @@ bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
 
     for (int k = 1; k < 3; ++k) {
         int i = rem[k];
-        if (combo[i].u_cx < combo[idx_left].u_cx) {
+        if (combo[i].u_px < combo[idx_left].u_px) {
             idx_left = i;
         }
-        if (combo[i].u_cx > combo[idx_right].u_cx) {
+        if (combo[i].u_px > combo[idx_right].u_px) {
             idx_right = i;
         }
     }
@@ -376,8 +378,8 @@ bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
             // Condition that central LED projection lies in box with
             // corners defined by top, bottom, left, right LEDs
             
-            if((combo[i].u_cx < combo[idx_right].u_cx) && (combo[i].u_cx > combo[idx_left].u_cx)){
-                if((combo[i].v_cx > combo[idx_top].v_cx) && (combo[i].v_cx < combo[idx_bottom].v_cx)){
+            if((combo[i].u_px < combo[idx_right].u_px) && (combo[i].u_px > combo[idx_left].u_px)){
+                if((combo[i].v_px > combo[idx_top].v_px) && (combo[i].v_px < combo[idx_bottom].v_px)){
                     idx_center = i;
                     break;
                 }
@@ -393,7 +395,7 @@ bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     }
     
     // Arranged led_blob array
-    std::array<Blob,5> arranged_leds;
+    InnerLedCandidates arranged_leds;
 
     arranged_leds[0] = combo[idx_top];
     arranged_leds[1] = combo[idx_left];
@@ -405,7 +407,7 @@ bool vbn::FeatureDetector::InnerPatternArrange(std::array<Blob,5>& combo){
     return true;
 }
 
-float vbn::FeatureDetector::evaluateInnerCross(const std::array<Blob,5>& combo){
+float vbn::FeatureDetector::evaluateInnerCross(const InnerLedCandidates& combo){
     // combo is assumed to be in cannonical order:
     // index 0 -> TOP
     // index 1 -> LEFT
@@ -417,25 +419,25 @@ float vbn::FeatureDetector::evaluateInnerCross(const std::array<Blob,5>& combo){
 
     // Computing geometric properties for scoring
 
-    const Blob& T = combo[0];
-    const Blob& L = combo[1];
-    const Blob& B = combo[2];
-    const Blob& R = combo[3];
-    const Blob& C = combo[4];
+    const msg::Feature& T = combo[0];
+    const msg::Feature& L = combo[1];
+    const msg::Feature& B = combo[2];
+    const msg::Feature& R = combo[3];
+    const msg::Feature& C = combo[4];
 
-    auto dist = [](const Blob& a, const Blob& b) -> float {
-        float du = a.u_cx - b.u_cx;
-        float dv = a.v_cx - b.v_cx;
+    auto dist = [](const msg::Feature& a, const msg::Feature& b) -> float {
+        float du = a.u_px - b.u_px;
+        float dv = a.v_px - b.v_px;
         return std::sqrt(du*du + dv*dv);
     };
 
     // Pattern center
-    float u0 = 0.25f * (T.u_cx + L.u_cx + B.u_cx + R.u_cx);
-    float v0 = 0.25f * (T.v_cx + L.v_cx + B.v_cx + R.v_cx);
+    float u0 = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
+    float v0 = 0.25f * (T.v_px + L.v_px + B.v_px + R.v_px);
 
-    Blob center;
-    center.u_cx = u0;
-    center.v_cx = v0;
+    msg::Feature center;
+    center.u_px = u0;
+    center.v_px = v0;
 
     // ----------- TRACKING STATE -----------------------
     if(m_current_state == msg::TrackState::TRACK){
@@ -532,7 +534,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
 
     // Initialise scoring
     float best_score = 1e9f;
-    std::array<Blob,5> best_five;
+    InnerLedCandidates best_five;
 
     // -------------------------------------------------------------
     // COMBINATION SEARCH
@@ -544,7 +546,7 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
                     for (std::size_t m = l + 1; m < blob_count; ++m) {
 
                         // The current 5-choice indices:
-                        std::array<Blob,5> combo = {
+                        InnerLedCandidates combo = {
                             blobs[i],
                             blobs[j],
                             blobs[k],
@@ -582,13 +584,14 @@ bool vbn::FeatureDetector::identifyPattern(const BlobArray& blobs,
 
     // Place the LEDs into slots
     for (int s = 0; s < 5; ++s) {
-        msg::Led2D& L = leds[s];
-        const Blob& B = best_five[s];
+        msg::Feature& L = leds[s];
+        const msg::Feature& B = best_five[s];
 
-        L.u_px       = B.u_cx;
-        L.v_px       = B.v_cx;
+        L.u_px       = B.u_px;
+        L.v_px       = B.v_px;
         L.area       = B.area;
-        L.strength   = B.intensity / (255.0f * B.area + 1e-6f);
+        L.intensity  = B.intensity;
+
         L.pattern_id = msg::PatternId::INNER;
         L.slot_id    = static_cast<uint8_t>(s);  // TOP/LEFT/BOTTOM/RIGHT/CENTER
         L.valid      = 1;
@@ -605,35 +608,21 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     // We start by assuming we havent lost last state
     m_current_state = m_last_state;
 
-    // Filling FeatureFrame if detection fails
-    // All failure conditions then only have to change the state and return false
-    out.led_count   = 0;
-    out.visible_mask = msg::VISIBLE_NONE;
-    out.pattern_id  = msg::PatternId::UNKNOWN;
+    // Initialising as empty
+    for (std::size_t i = 0; i < MAX_LEDS; ++i) {
+        out.feats[i].u_px = 0.0f;
+        out.feats[i].v_px = 0.0f;
+        out.feats[i].area = 0;
+        out.feats[i].intensity = 0.0f;
 
-    out.t_exp_end_us = img.t_exp_end_us;
-    out.frame_id    = img.frame_id;
-    out.state       = m_current_state;
-
-    for (std::size_t i = 0; i < msg::MAX_LEDS; ++i) {
-        out.leds[i].u_px = 0.0f;
-        out.leds[i].v_px = 0.0f;
-        out.leds[i].strength = 0.0f;
-        out.leds[i].pattern_id = msg::PatternId::UNKNOWN;
-        out.leds[i].slot_id = 0;
-        out.leds[i].valid = 0;
+        out.feats[i].pattern_id = msg::PatternId::UNKNOWN;
+        out.feats[i].slot_id = 0;
+        out.feats[i].valid = 0;
     }
 
-    auto fail_lost = [&]() -> bool {
-        m_current_state = msg::TrackState::LOST;
-        m_last_state    = m_current_state;     // <-- critical
-        m_last_pattern_id = msg::PatternId::UNKNOWN; // optional but sane
-        out.state = m_current_state;
-        out.led_count = 0;
-        out.visible_mask = msg::VISIBLE_NONE;
-        out.pattern_id = msg::PatternId::UNKNOWN;
-        return false;
-    };
+    BlobArray m_blobs{};
+    LedArray m_leds{};
+    // Initialise these arrays as zero too
 
     // ROI DEFINTION
     defineROI(img);
@@ -645,7 +634,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     if (num_blobs <5) {
         // Less than 5 blobs found → LOST
-        return fail_lost();
+        return fail(Status::NOT_ENOUGH_RAW_BLOBS, out);
     }
     
     // BLOB-AREA THRESHOLDING
@@ -680,11 +669,10 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Future FDIR logic:
             // Pass on top-5 blobs by intensity to pattern identification step
             // Currently not implemnented so we return false here
-            out.state = m_current_state;
-            return false; // Detection was unsucessfull due to insufficient blobs
+            return fail(Status::NOT_ENOUGH_LED_BLOBS, out); // Detection was unsucessfull due to insufficient blobs
         }
 
-        return fail_lost();
+        return fail(Status::NOT_ENOUGH_LED_BLOBS, out);
     }
 
     // Idea for future FDIR logic here:
@@ -693,13 +681,12 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     // Or use dynamic area thresholds based on range estimate if any
 
     // PATTERN-IDENTIFICATION
-    LedArray leds{};
     // Initial estimate of number of leds
     std::size_t led_count = 0;
     msg::PatternId pattern_id = m_last_pattern_id;
     float confidence = 1e6f;
     
-    bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
+    bool found_pattern = identifyPattern(blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
 
@@ -709,7 +696,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Downgrade to LOST
             m_current_state = msg::TrackState::LOST;
 
-            bool found_pattern = identifyPattern(blobs, num_led_blobs, leds, led_count, pattern_id, confidence);
+            bool found_pattern = identifyPattern(blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
 
             // attempting pattern identification again w/o tracking assumptions
             if(!found_pattern){
@@ -723,37 +710,41 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
                 // We can populate items in FeatureFrame that can help identify where detection failed.
 
-                return fail_lost();
+                return fail(Status::UNKNOWN_PATTERN, out);
                 // frame will be dropped
             }
         }
 
-        return fail_lost();
+        return fail(Status::UNKNOWN_PATTERN, out);
     }
+
     // Pattern identification was successful
     m_current_state = msg::TrackState::TRACK;
 
     // POPULATE FEATURE FRAME
-    out.led_count = led_count;
+    for (std::size_t i = 0; i < MAX_LEDS; ++i) {
+        out.feats[i] = m_leds[i];
+    }
+    out.feat_count = led_count;
     out.visible_mask = msg::VISIBLE_INNER;
-    out.leds = leds;
     out.pattern_id = pattern_id;
     out.t_exp_end_us = img.t_exp_end_us;
     out.frame_id = img.frame_id;
     out.state = m_current_state;
+    out.valid = true;
 
     // TRACKING
 
-    auto dist = [](const msg::Led2D& a, const msg::Led2D& b) -> float {
+    auto dist = [](const msg::Feature& a, const msg::Feature& b) -> float {
         float du = a.u_px - b.u_px;
         float dv = a.v_px - b.v_px;
         return std::sqrt(du*du + dv*dv);
     };
 
-    const msg::Led2D T = leds[0]; // TOP
-    const msg::Led2D L = leds[1]; // LEFT
-    const msg::Led2D B = leds[2]; // BOTTOM
-    const msg::Led2D R = leds[3]; // RIGHT
+    const msg::Feature T = m_leds[0]; // TOP
+    const msg::Feature L = m_leds[1]; // LEFT
+    const msg::Feature B = m_leds[2]; // BOTTOM
+    const msg::Feature R = m_leds[3]; // RIGHT
 
     float u0 = 0.5f * (L.u_px + R.u_px);
     float v0 = 0.5f * (T.v_px + B.v_px);
@@ -765,9 +756,29 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     float LR = dist(L, R);
     
     m_last_pattern_max_sep_px = std::max(TB,LR);
-    m_last_leds = leds;
+    m_last_leds = m_leds;
     m_last_pattern_id = pattern_id;
     m_last_state = m_current_state;
 
     return true; // Indicates detection was "successful"
 }
+
+// FDIR
+
+bool vbn::FeatureDetector::fail(Status s, msg::FeatureFrame& out) {
+    m_status = s;
+    m_current_state = msg::TrackState::LOST;
+    m_last_state    = m_current_state;     // <-- critical
+    m_last_pattern_id = msg::PatternId::UNKNOWN; // optional but sane\
+
+    for (std::size_t i = 0; i < MAX_BLOBS; ++i) {
+        out.feats[i] = m_blobs[i];
+    }
+    out.feat_count = 0;
+    out.visible_mask = msg::VISIBLE_NONE;
+    out.pattern_id = msg::PatternId::UNKNOWN;
+    out.state = m_current_state;
+    out.valid = false;
+    return false;
+}
+

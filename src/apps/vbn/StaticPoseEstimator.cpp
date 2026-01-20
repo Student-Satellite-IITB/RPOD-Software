@@ -172,8 +172,8 @@ bool vbn::StaticPoseEstimator::packetLeds(const msg::FeatureFrame& feature_frame
     // and pack them into inner and outer arrays
     // based on their pattern_id and slot_id.
 
-    for (std::size_t i = 0; i < feature_frame.led_count; ++i) {
-        const msg::Led2D& led = feature_frame.leds[i];
+    for (std::size_t i = 0; i < feature_frame.feat_count; ++i) {
+        const msg::Feature& led = feature_frame.feats[i];
 
         if(led.valid == 0) {
             continue; // skip invalid LEDs
@@ -208,14 +208,14 @@ void vbn::StaticPoseEstimator::transformLedstoPPF(PackedLeds& packed) const{
     // converting to principal point centered coordinates
 
     for(std::size_t i =0; i < packed.inner_count; ++i) {
-        msg::Led2D& led = packed.inner[i];
+        msg::Feature& led = packed.inner[i];
         // Transform to camera frame (subpixel precision)
         led.u_px = (led.u_px - cx);
         led.v_px = (led.v_px - cy);
     }
 
     for (std::size_t i = 0; i < packed.outer_count; ++i) {
-    msg::Led2D& led = packed.outer[i];
+    msg::Feature& led = packed.outer[i];
     led.u_px = (led.u_px - cx);
     led.v_px = (led.v_px - cy);
     }
@@ -251,10 +251,10 @@ bool vbn::StaticPoseEstimator::computeLosAngles(const PackedLeds& packed,
 
     // INNER LEDs are packed by slot:
     // 0 = TOP, 1 = LEFT, 2 = BOTTOM, 3 = RIGHT, 4 = CENTER
-    const msg::Led2D& T = packed.inner[0];
-    const msg::Led2D& L = packed.inner[1];
-    const msg::Led2D& B = packed.inner[2];
-    const msg::Led2D& R = packed.inner[3];
+    const msg::Feature& T = packed.inner[0];
+    const msg::Feature& L = packed.inner[1];
+    const msg::Feature& B = packed.inner[2];
+    const msg::Feature& R = packed.inner[3];
 
     // 4-LED pattern centre in PPF (ũ, ṽ)
     const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
@@ -286,11 +286,11 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
         return std::asin(x);
     };
 
-    const msg::Led2D& T = packed.inner[0];
-    const msg::Led2D& L = packed.inner[1];
-    const msg::Led2D& B = packed.inner[2];
-    const msg::Led2D& R = packed.inner[3];
-    const msg::Led2D& C = packed.inner[4];
+    const msg::Feature& T = packed.inner[0];
+    const msg::Feature& L = packed.inner[1];
+    const msg::Feature& B = packed.inner[2];
+    const msg::Feature& R = packed.inner[3];
+    const msg::Feature& C = packed.inner[4];
 
     // Pattern centre in PPF
     const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
@@ -403,11 +403,11 @@ bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, f
     const auto fx = m_cfg.CAM_INTRINSICS.fx;
     const auto fy = m_cfg.CAM_INTRINSICS.fy;
     
-    const msg::Led2D& T = packed.inner[0];
-    const msg::Led2D& L = packed.inner[1];
-    const msg::Led2D& B = packed.inner[2];
-    const msg::Led2D& R = packed.inner[3];
-    const msg::Led2D& C = packed.inner[4];
+    const msg::Feature& T = packed.inner[0];
+    const msg::Feature& L = packed.inner[1];
+    const msg::Feature& B = packed.inner[2];
+    const msg::Feature& R = packed.inner[3];
+    const msg::Feature& C = packed.inner[4];
 
     // Pattern centre in PPF
     const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);

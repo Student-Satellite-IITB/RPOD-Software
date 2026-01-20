@@ -68,11 +68,11 @@ private:
     StaticPoseEstimatorConfig m_cfg{};
 
     // LED PACKING
-    using InnerPatternLeds = std::array<msg::Led2D, 5>;
+    using InnerPatternLeds = std::array<msg::Feature, 5>;
 
     // OUTER: for now just collect them; no geometry enforced yet
-    static constexpr std::size_t MAX_OUTER_LEDS = msg::MAX_LEDS;
-    using OuterPatternLeds = std::array<msg::Led2D, MAX_OUTER_LEDS>;
+    static constexpr std::size_t MAX_OUTER_LEDS = msg::MAX_FEATS;
+    using OuterPatternLeds = std::array<msg::Feature, MAX_OUTER_LEDS>;
 
     struct PackedLeds {
         InnerPatternLeds inner{};

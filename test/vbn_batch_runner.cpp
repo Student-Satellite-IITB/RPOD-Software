@@ -210,7 +210,7 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
     msg::PoseEstimate pose{};
 
     auto t2 = std::chrono::high_resolution_clock::now();
-    const bool spe_ok = (fd_ok && features.led_count > 0) ? spe.estimate(features, pose) : false;
+    const bool spe_ok = (fd_ok && features.feat_count > 0) ? spe.estimate(features, pose) : false;
     auto t3 = std::chrono::high_resolution_clock::now();
     const double spe_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
 
@@ -231,14 +231,14 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
         rf << "[FD]\n";
         rf << "fd_ok = " << (fd_ok ? 1 : 0) << "\n";
         rf << "fd_track_state = " << (features.state == msg::TrackState::TRACK ? "TRACK" : "LOST") << "\n";
-        rf << "fd_led_count = " << static_cast<int>(features.led_count) << "\n";
+        rf << "fd_led_count = " << static_cast<int>(features.feat_count) << "\n";
         rf << "fd_time_ms = " << fd_ms << "\n";
         rf << "fd_bin_thresh = " << det_cfg.BIN_THRESH << "\n";
         rf << "fd_min_blob_area = " << det_cfg.MIN_BLOB_AREA << "\n";
         rf << "fd_max_blob_area = " << det_cfg.MAX_BLOB_AREA << "\n";
 
-        for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
-            const auto& L = features.leds[i];
+        for (int i = 0; i < static_cast<int>(features.feat_count); ++i) {
+            const auto& L = features.feats[i];
             rf << "fd_led" << i << ".id = " << i << "\n";
             rf << "fd_led" << i << ".u_px = " << std::fixed << std::setprecision(6) << L.u_px << "\n";
             rf << "fd_led" << i << ".v_px = " << std::fixed << std::setprecision(6) << L.v_px << "\n";
@@ -272,8 +272,8 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
         cv::Mat annotated;
         cv::cvtColor(gray_vis, annotated, cv::COLOR_GRAY2BGR);
 
-        for (int i = 0; i < static_cast<int>(features.led_count); ++i) {
-            const auto& L = features.leds[i];
+        for (int i = 0; i < static_cast<int>(features.feat_count); ++i) {
+            const auto& L = features.feats[i];
             cv::Point pt(static_cast<int>(L.u_px), static_cast<int>(L.v_px));
 
             cv::circle(annotated, pt, 20, cv::Scalar(0, 0, 255), 2);

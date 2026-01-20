@@ -36,11 +36,12 @@ enum class LedSlot : uint8_t {
 };
 
 // One LED measurement in image pixels (subpixel allowed).
-struct Led2D {
-    float u_px;        // column (x) in pixels, subpixel allowed
-    float v_px;        // row (y) in pixels, subpixel allowed
-    int area;          // number of pixels in LED
-    float strength;    // 0..1 detector confidence (e.g., normalized peak or blob SNR)
+struct Feature {
+    float u_px;        // centroid u in pixel coords (float)
+    float v_px;        // centroid v in pixel coords
+    int area;          // number of pixels in blob
+    float intensity;   // sum of pixel intensities
+
     PatternId pattern_id; // PatternId enum as uint8_t
     uint8_t slot_id;    // cast of LedSlot for INNER; or 0..N-1 for OUTER
     uint8_t valid;     // 1 = this LED was seen this frame; 0 = missing
@@ -50,11 +51,12 @@ struct Led2D {
 // - INNER uses up to 5 slots (TOP/LEFT/BOTTOM/RIGHT/CENTER).
 // - OUTER can use up to 8 asymmetric slots.
 // - If BOTH are visible, you can include a mix (estimator will filter by pattern).
-constexpr std::size_t MAX_LEDS = 8;
+constexpr std::size_t MAX_FEATS = 100; //
 
 struct FeatureFrame {               
-    std::array<Led2D, MAX_LEDS> leds; 
-    uint8_t  led_count;              // 0...MAX_LEDS: number of valid entries in leds[]
+    std::array<Feature, MAX_FEATS> feats; 
+    uint8_t  feat_count;              // 0...MAX_LEDS: number of valid entries in leds[]
+    // If out.valid == false then led_count = blob counts
 
     uint8_t visible_mask;            // bitmask of visible patterns (VISIBLE_*)
     // Which template the detector recommends as "primary" this frame;
@@ -69,6 +71,8 @@ struct FeatureFrame {
     TrackState state;                 // INIT/TRACK/LOST from detector/tracker
 
     // Quality metrics
+    bool valid; // Valid for FeatureDetection (Identified LEDs)
+    // Status status;
     // float sat_pct;                    // % pixels saturated in source frame (0..100), helps quality gating
 };
 
