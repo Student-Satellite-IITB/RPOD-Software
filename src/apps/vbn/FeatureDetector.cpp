@@ -631,17 +631,12 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     const std::size_t num_blobs = detectBlobs(img, m_blobs);
     m_featurecount = num_blobs;
 
-    if (num_blobs <5) {
-        // Less than 5 blobs found → LOST
-        return fail(Status::NOT_ENOUGH_RAW_BLOBS, out);
-    }
-    
     // BLOB-AREA THRESHOLDING
 
     // threshold blobs modifies blobs in place so we back them up
     BlobArray blobs_raw = m_blobs; 
 
-    std::size_t num_led_blobs = thresholdBlobs(m_blobs, num_blobs);
+    std::size_t num_led_blobs = thresholdBlobs(m_blobs, m_featurecount);
     m_featurecount = num_led_blobs;
 
     // Simple heurestic: if num_led_blobs == 5, no area thresholding needed

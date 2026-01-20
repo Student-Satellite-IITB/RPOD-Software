@@ -96,7 +96,7 @@ int main() {
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
     mon_ctx.cfg.enable_csv       = true;  
     mon_ctx.cfg.testcase         = ground::Test::CENTROID_LOG;
-    mon_ctx.cfg.out_dir = "tools/data/tmp/vbn_monitor";
+    mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
     mon_ctx.cfg.port = 8080;
     mon_ctx.cfg.snapshot_period_ms = 200;
     mon_ctx.cfg.stream_fps = 10;
