@@ -39,18 +39,6 @@ void vbn::FeatureDetector::reset() {
 
     m_last_state = msg::TrackState::LOST;
 
-    // Invalidate all last_leds_
-    for (auto& led : m_last_leds) {
-        led.u_px      = 0.0f;
-        led.v_px      = 0.0f;
-        led.area      = 0;
-        led.intensity = 0.0f;
-
-        led.pattern_id= msg::PatternId::UNKNOWN;
-        led.slot_id   = 0;
-        led.valid     = 0;
-    }
-
     // Default ROI = "whole image" until we see a frame.
     m_roi_u_min = m_roi_v_min = 0;
     m_roi_u_max = m_roi_v_max = 0;
@@ -609,7 +597,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     m_current_state = m_last_state;
 
     // Initialising as empty
-    for (std::size_t i = 0; i < MAX_LEDS; ++i) {
+    for (std::size_t i = 0; i < msg::MAX_FEATS; ++i) {
         out.feats[i].u_px = 0.0f;
         out.feats[i].v_px = 0.0f;
         out.feats[i].area = 0;
@@ -620,24 +608,63 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
         out.feats[i].valid = 0;
     }
 
-    BlobArray m_blobs{};
-    LedArray m_leds{};
-    // Initialise these arrays as zero too
+    out.t_exp_end_us = img.t_exp_end_us;
+    out.frame_id = img.frame_id;
+
+    BlobArray blobs;
+    BlobArray blobs_filtered; 
+    LedArray leds;
 
     // ROI DEFINTION
     defineROI(img);
     
     // BLOB DETECTION
-    const std::size_t num_raw_blobs = detectBlobs(img, m_blobs);
+    const std::size_t num_raw_blobs = detectBlobs(img, blobs);
+
+    // ========= OUTPUT MODE: RAW BLOBS =========
+    if (m_cfg.OUTPUT_MODE == FDOutputMode::RAW_BLOBS) {
+
+        for (std::size_t i = 0; i < num_raw_blobs; ++i) {
+            out.feats[i] = blobs[i];
+        }
+        out.feat_count = static_cast<uint8_t>(num_raw_blobs);
+        out.visible_mask = msg::VISIBLE_NONE;
+        out.pattern_id = msg::PatternId::UNKNOWN;
+        out.state = m_current_state;
+        out.valid = true;
+
+        if(out.feat_count > 0){
+            return true;
+        }
+        else{
+            return false;
+        }
+        
+    }
 
     // BLOB-AREA THRESHOLDING
+    std::size_t num_filtered_blobs = thresholdBlobs(blobs, blobs_filtered, num_raw_blobs);
 
-    // threshold blobs modifies blobs in place so we back them up
-    BlobArray blobs_raw = m_blobs;
-    BlobArray blobs_filtered = m_blobs; 
+    // ========= OUTPUT MODE: FILTERED BLOBS =========
+    if (m_cfg.OUTPUT_MODE== FDOutputMode::FILTERED_BLOBS) {
+        for (std::size_t i = 0; i < num_filtered_blobs; ++i) {
+            out.feats[i] = blobs_filtered[i];
+        }
+        out.feat_count = static_cast<uint8_t>(num_filtered_blobs);
+        out.visible_mask = msg::VISIBLE_NONE;
+        out.pattern_id = msg::PatternId::UNKNOWN;
+        out.state = m_current_state;
+        out.valid = true;
 
-    std::size_t num_filtered_blobs = thresholdBlobs(blobs_raw, blobs_filtered, num_raw_blobs);
-    m_featurecount = num_filtered_blobs;
+        if(out.feat_count > 0){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+
+    // ========= OUTPUT MODE: LEDS (nominal flight) =========
 
     // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
     // It might be that the blobs are valid but smaller than min area
@@ -649,10 +676,8 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
         if(num_raw_blobs == 5){
             // All blobs are potential LED blobs
             // No area thresholding needed
-
-            m_blobs = blobs_raw; // Restore raw blobs
+            blobs_filtered = blobs;
             num_filtered_blobs = num_raw_blobs;
-            m_featurecount = num_raw_blobs;
             
         } else if(num_raw_blobs > 5) {
             // More than 5 blobs detected but none over min area threshold
@@ -664,11 +689,9 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Future FDIR logic:
             // Pass on top-5 blobs by intensity to pattern identification step
             // Currently not implemnented so we return false here
-            m_featurecount = num_raw_blobs;
             return fail(Status::NOT_ENOUGH_LED_BLOBS, out); // Detection was unsucessfull due to insufficient blobs
         }
         else{
-            m_featurecount = num_raw_blobs;
             return fail(Status::NOT_ENOUGH_RAW_BLOBS, out);
         }
     }
@@ -680,10 +703,12 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     // PATTERN-IDENTIFICATION
     // Initial estimate of number of leds
+    
+    std::size_t led_count = 0;
     msg::PatternId pattern_id = m_last_pattern_id;
     float confidence = 1e6f;
     
-    bool found_pattern = identifyPattern(m_blobs, num_filtered_blobs, m_leds, m_featurecount, pattern_id, confidence);
+    bool found_pattern = identifyPattern(blobs_filtered, num_filtered_blobs, leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
 
@@ -693,7 +718,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Downgrade to LOST
             m_current_state = msg::TrackState::LOST;
 
-            bool found_pattern = identifyPattern(m_blobs, num_filtered_blobs, m_leds, m_featurecount, pattern_id, confidence);
+            bool found_pattern = identifyPattern(blobs_filtered, num_filtered_blobs, leds, led_count, pattern_id, confidence);
 
             // attempting pattern identification again w/o tracking assumptions
             if(!found_pattern){
@@ -720,9 +745,9 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
 
     // POPULATE FEATURE FRAME
     for (std::size_t i = 0; i < MAX_LEDS; ++i) {
-        out.feats[i] = m_leds[i];
+        out.feats[i] = leds[i];
     }
-    out.feat_count = m_featurecount;
+    out.feat_count = static_cast<uint8_t>(led_count);
     out.visible_mask = msg::VISIBLE_INNER;
     out.pattern_id = pattern_id;
     out.t_exp_end_us = img.t_exp_end_us;
@@ -738,10 +763,10 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
         return std::sqrt(du*du + dv*dv);
     };
 
-    const msg::Feature T = m_leds[0]; // TOP
-    const msg::Feature L = m_leds[1]; // LEFT
-    const msg::Feature B = m_leds[2]; // BOTTOM
-    const msg::Feature R = m_leds[3]; // RIGHT
+    const msg::Feature T = leds[0]; // TOP
+    const msg::Feature L = leds[1]; // LEFT
+    const msg::Feature B = leds[2]; // BOTTOM
+    const msg::Feature R = leds[3]; // RIGHT
 
     float u0 = 0.5f * (L.u_px + R.u_px);
     float v0 = 0.5f * (T.v_px + B.v_px);
@@ -753,7 +778,6 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     float LR = dist(L, R);
     
     m_last_pattern_max_sep_px = std::max(TB,LR);
-    m_last_leds = m_leds;
     m_last_pattern_id = pattern_id;
     m_last_state = m_current_state;
 
@@ -768,10 +792,7 @@ bool vbn::FeatureDetector::fail(Status s, msg::FeatureFrame& out) {
     m_last_state    = m_current_state;     // <-- critical
     m_last_pattern_id = msg::PatternId::UNKNOWN; // optional but sane
 
-    for (std::size_t i = 0; i < MAX_BLOBS; ++i) {
-        out.feats[i] = m_blobs[i];
-    }
-    out.feat_count = m_featurecount;
+    out.feat_count = 0;
     out.visible_mask = msg::VISIBLE_NONE;
     out.pattern_id = msg::PatternId::UNKNOWN;
     out.state = m_current_state;

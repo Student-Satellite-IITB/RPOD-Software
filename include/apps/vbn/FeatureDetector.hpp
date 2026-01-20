@@ -8,6 +8,12 @@
 
 namespace vbn {
 
+enum class FDOutputMode : uint8_t {
+    LEDS = 0,          // nominal flight output
+    RAW_BLOBS = 1,      // debug / degraded
+    FILTERED_BLOBS = 2  // debug / degraded
+};
+
 // ---------------------------------------------------------------------------
 // Configuration for the FeatureDetector (tunable parameters, no state).
 // ---------------------------------------------------------------------------
@@ -28,7 +34,8 @@ struct FeatureDetectorConfig {
 
     // Minimum border from image edges when defining ROI (in pixels).
     uint16_t ROI_BORDER_PX    = 8;
-    
+
+    FDOutputMode OUTPUT_MODE = FDOutputMode::LEDS;
 };
 
 // ---------------------------------------------------------------------------
@@ -73,12 +80,6 @@ private:
     using BlobArray = std::array<msg::Feature, MAX_BLOBS>; //type alias for arrray of blobs
     using LedArray = std::array<msg::Feature, MAX_LEDS>; //type alias for array of leds
     using InnerLedCandidates = std::array<msg::Feature, 5>; // type alias for Inner LED Candidates
-
-    LedArray m_leds;
-    BlobArray m_blobs;
-    std::size_t m_featurecount;
-
-    LedArray m_last_leds{};
 
     msg::TrackState m_current_state = msg::TrackState::LOST;
     msg::TrackState m_last_state = msg::TrackState::LOST;

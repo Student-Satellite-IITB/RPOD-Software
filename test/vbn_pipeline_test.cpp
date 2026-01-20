@@ -46,6 +46,7 @@ int main() {
     fd_cfg.MAX_OFFSET_SCORE = 0.6f;
     fd_cfg.ROI_RADIUS_MARGIN = 2.5f;
     fd_cfg.ROI_BORDER_PX = 10;
+    fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::RAW_BLOBS;
 
     vbn::StaticPoseEstimatorConfig spe_cfg{};
     // Camera intrinsics (TODO: plug in real calibration)
@@ -96,6 +97,8 @@ int main() {
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
     mon_ctx.cfg.enable_csv       = true;  
     mon_ctx.cfg.testcase         = ground::Test::CENTROID_LOG;
+    mon_ctx.cfg.log_n = 100;
+    mon_ctx.cfg.log_every = 1;
     mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
     mon_ctx.cfg.port = 8080;
     mon_ctx.cfg.snapshot_period_ms = 200;
