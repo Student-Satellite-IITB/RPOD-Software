@@ -628,9 +628,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     defineROI(img);
     
     // BLOB DETECTION
-    BlobArray blobs{};
-    const std::size_t num_blobs = detectBlobs(img, blobs);
-
+    const std::size_t num_blobs = detectBlobs(img, m_blobs);
 
     if (num_blobs <5) {
         // Less than 5 blobs found → LOST
@@ -640,9 +638,9 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     // BLOB-AREA THRESHOLDING
 
     // threshold blobs modifies blobs in place so we back them up
-    BlobArray blobs_raw = blobs; 
+    BlobArray blobs_raw = m_blobs; 
 
-    std::size_t num_led_blobs = thresholdBlobs(blobs, num_blobs);
+    std::size_t num_led_blobs = thresholdBlobs(m_blobs, num_blobs);
 
 
     // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
@@ -656,7 +654,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // All blobs are potential LED blobs
             // No area thresholding needed
 
-            blobs = blobs_raw; // Restore raw blobs
+            m_blobs = blobs_raw; // Restore raw blobs
             num_led_blobs = num_blobs;
 
         } else {
@@ -686,7 +684,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     msg::PatternId pattern_id = m_last_pattern_id;
     float confidence = 1e6f;
     
-    bool found_pattern = identifyPattern(blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
+    bool found_pattern = identifyPattern(m_blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
 
@@ -696,7 +694,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Downgrade to LOST
             m_current_state = msg::TrackState::LOST;
 
-            bool found_pattern = identifyPattern(blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
+            bool found_pattern = identifyPattern(m_blobs, num_led_blobs, m_leds, led_count, pattern_id, confidence);
 
             // attempting pattern identification again w/o tracking assumptions
             if(!found_pattern){
