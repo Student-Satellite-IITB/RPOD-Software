@@ -437,7 +437,7 @@ void TaskEntry(void* arg) {
 
             // -------- CENTROID LOG (blob centroids only) --------
             else if (ctx->cfg.testcase == Test::CENTROID_LOG) {
-                if (got_new_feat && (k % ctx->cfg.log_every == 0)) {
+                if (got_new_feat && (k % ctx->cfg.log_every == 0) && last_feat.feat_count>0) {
 
                     // Log ALL blobs/features as-is (no validity/pattern assumptions)
                     const uint8_t n = last_feat.feat_count;
@@ -454,6 +454,7 @@ void TaskEntry(void* arg) {
 
                     // Here: logged counts "frames logged", not "rows"
                     logged++;
+                    std::cout <<"LOGGED : "<< logged << "\n";
                     if (logged == ctx->cfg.log_n) {
                         csv.flush();
                         csv.close();
