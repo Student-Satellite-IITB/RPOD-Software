@@ -302,7 +302,7 @@ std::size_t vbn::FeatureDetector::detectBlobs(const msg::ImageFrame& img, BlobAr
     return blob_count;
 }
 
-std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, std::size_t blob_count){
+std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, BlobArray& filtered_blobs, std::size_t blob_count) const{
     
     std::size_t led_blob_count = 0;
 
@@ -316,7 +316,7 @@ std::size_t vbn::FeatureDetector::thresholdBlobs(BlobArray& blobs, std::size_t b
         // Or intensity based on distance
 
         // Potential LED blobs
-        blobs[led_blob_count++] = B;
+        filtered_blobs[led_blob_count++] = B;
     }
     return led_blob_count;
 }
@@ -628,33 +628,33 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     defineROI(img);
     
     // BLOB DETECTION
-    const std::size_t num_blobs = detectBlobs(img, m_blobs);
-    m_featurecount = num_blobs;
+    const std::size_t num_raw_blobs = detectBlobs(img, m_blobs);
 
     // BLOB-AREA THRESHOLDING
 
     // threshold blobs modifies blobs in place so we back them up
-    BlobArray blobs_raw = m_blobs; 
+    BlobArray blobs_raw = m_blobs;
+    BlobArray blobs_filtered = m_blobs; 
 
-    std::size_t num_led_blobs = thresholdBlobs(m_blobs, m_featurecount);
-    m_featurecount = num_led_blobs;
+    std::size_t num_filtered_blobs = thresholdBlobs(blobs_raw, blobs_filtered, num_raw_blobs);
+    m_featurecount = num_filtered_blobs;
 
     // Simple heurestic: if num_led_blobs == 5, no area thresholding needed
     // It might be that the blobs are valid but smaller than min area
     // Even if not the pattern identification step will reject them cheaply
-    if(num_led_blobs < 5){
+    if(num_filtered_blobs < 5){
         // Not enough blobs to identify pattern
         // We perform some FDIR logic
 
-        if(num_blobs == 5){
+        if(num_raw_blobs == 5){
             // All blobs are potential LED blobs
             // No area thresholding needed
 
             m_blobs = blobs_raw; // Restore raw blobs
-            num_led_blobs = num_blobs;
-            m_featurecount = num_led_blobs;
-
-        } else {
+            num_filtered_blobs = num_raw_blobs;
+            m_featurecount = num_raw_blobs;
+            
+        } else if(num_raw_blobs > 5) {
             // More than 5 blobs detected but none over min area threshold
             
             // Mark lost as this is a degraded state if we are in TRACKING mode
@@ -664,10 +664,13 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Future FDIR logic:
             // Pass on top-5 blobs by intensity to pattern identification step
             // Currently not implemnented so we return false here
+            m_featurecount = num_raw_blobs;
             return fail(Status::NOT_ENOUGH_LED_BLOBS, out); // Detection was unsucessfull due to insufficient blobs
         }
-
-        return fail(Status::NOT_ENOUGH_LED_BLOBS, out);
+        else{
+            m_featurecount = num_raw_blobs;
+            return fail(Status::NOT_ENOUGH_RAW_BLOBS, out);
+        }
     }
 
     // Idea for future FDIR logic here:
@@ -680,7 +683,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
     msg::PatternId pattern_id = m_last_pattern_id;
     float confidence = 1e6f;
     
-    bool found_pattern = identifyPattern(m_blobs, num_led_blobs, m_leds, m_featurecount, pattern_id, confidence);
+    bool found_pattern = identifyPattern(m_blobs, num_filtered_blobs, m_leds, m_featurecount, pattern_id, confidence);
     if(!found_pattern){
         // Identify pattern fails
 
@@ -690,7 +693,7 @@ bool vbn::FeatureDetector::detect(const msg::ImageFrame& img, msg::FeatureFrame&
             // Downgrade to LOST
             m_current_state = msg::TrackState::LOST;
 
-            bool found_pattern = identifyPattern(m_blobs, num_led_blobs, m_leds, m_featurecount, pattern_id, confidence);
+            bool found_pattern = identifyPattern(m_blobs, num_filtered_blobs, m_leds, m_featurecount, pattern_id, confidence);
 
             // attempting pattern identification again w/o tracking assumptions
             if(!found_pattern){

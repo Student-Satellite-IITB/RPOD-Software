@@ -105,7 +105,7 @@ private:
     void defineROI(const msg::ImageFrame& img);
 
     std::size_t detectBlobs(const msg::ImageFrame& img, BlobArray& blobs);
-    std::size_t thresholdBlobs(BlobArray& blobs, std::size_t blob_count);
+    std::size_t thresholdBlobs(BlobArray& blobs, BlobArray& filtered_blobs, std::size_t blob_count) const;
     
     bool InnerPatternArrange(InnerLedCandidates& combo);
     float evaluateInnerCross(const InnerLedCandidates& combo);
