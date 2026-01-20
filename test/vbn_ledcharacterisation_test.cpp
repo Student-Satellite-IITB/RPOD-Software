@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     fd_cfg.MAX_OFFSET_SCORE = 0.6f;
     fd_cfg.ROI_RADIUS_MARGIN = 2.5f;
     fd_cfg.ROI_BORDER_PX = 10;
-    fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::RAW_BLOBS;
+    fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::FILTERED_BLOBS;
 
     vbn::StaticPoseEstimatorConfig spe_cfg{};
     // SPE Not Needed

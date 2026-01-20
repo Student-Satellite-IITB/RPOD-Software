@@ -595,7 +595,7 @@ void TaskEntry(void* arg) {
 
         // Optional: Yield CPU, don't spin.
         // Commented for Full Speeed
-        //Rtos::SleepMs(100);
+        Rtos::SleepMs(12.5);
     }
 }
 
