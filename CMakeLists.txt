@@ -74,6 +74,11 @@ if(TARGET_PLATFORM STREQUAL "linux")
         target_link_libraries(rnav_pipeline_test ${OpenCV_LIBS} pthread)
         target_include_directories(rnav_pipeline_test PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # VBN pipeline test with Ground Monitor
+        add_executable(vbn_ledcharacterisation_test test/vbn_ledcharacterisation_test.cpp tools/groundmonitor/GroundMonitor.cpp ${SOURCES})
+        target_link_libraries(vbn_ledcharacterisation_test ${OpenCV_LIBS} pthread)
+        target_include_directories(vbn_ledcharacterisation_test PRIVATE ${CMAKE_SOURCE_DIR})
+
     endif()
     
     add_executable(vbn_imagecapturebuild_test test/vbn_imagecapturebuild_test.cpp ${SOURCES})

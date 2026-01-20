@@ -18,8 +18,72 @@
 
 #include "tools/groundmonitor/GroundMonitor.hpp"
 
-int main() {
-    std::cout << "=== VBN PIPELINE TEST ===\n";
+struct Args {
+    uint16_t bin_thresh = 250; // native DN units (e.g. 250 for 10-bit data)
+    int min_area = 50;
+    
+};
+
+static void print_usage(const char* exe) {
+    std::cerr
+        << "Usage:\n"
+        << "  " << exe << " [--bin_thresh N] [--min_area N]\n"
+        << "\nExample:\n"
+        << "  " << exe << " --bin_thresh 250 --min_area 50\n";
+}
+
+static bool parse_args(int argc, char** argv, Args& out) {
+    // Defaults already set in Args. No args is OK.
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+
+        auto need_value = [&](const char* name) -> const char* {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for " << name << "\n";
+                return nullptr;
+            }
+            return argv[++i];
+        };
+
+        if (a == "--bin_thresh") {
+            const char* v = need_value("--bin_thresh");
+            if (!v) return false;
+            int x = std::stoi(v);
+            if (x < 0 || x > 65535) {
+                std::cerr << "Invalid --bin_thresh (0..65535): " << x << "\n";
+                return false;
+            }
+            out.bin_thresh = static_cast<uint16_t>(x);
+
+        } else if (a == "--min_area"){
+            const char* v = need_value("--min_area");
+            if (!v) return false;
+            int x = std::stoi(v);
+            if (x < 0) {
+                std::cerr << "Invalid --min_area (>=0): " << x << "\n";
+                return false;
+            }
+            out.min_area = x;
+
+        } else if (a == "--help" || a == "-h") {
+            return false; // triggers usage print in main
+
+        } else {
+            std::cerr << "Unknown arg: " << a << "\n";
+            return false;
+        }
+    }
+    return true;
+}
+
+int main(int argc, char** argv) {
+    Args args;
+    if (!parse_args(argc, argv, args)) {
+        print_usage(argv[0]);
+        return 2;
+    }
+
+    std::cout << "=== VBN LED CHARACTERISATION TEST ===\n";
 
     // ---- QUEUES ----
     vbn::LiveFrameQueue liveFrameQueue(/*overwrite=*/true);
@@ -39,36 +103,17 @@ int main() {
     cap_cfg.bit_shift = 6;
 
     vbn::FeatureDetectorConfig fd_cfg{};
-    fd_cfg.BIN_THRESH = 250; // For 10-Bit Image
-    fd_cfg.MIN_BLOB_AREA = 50;
+    fd_cfg.BIN_THRESH = args.bin_thresh; // For 10-Bit Image
+    fd_cfg.MIN_BLOB_AREA = args.min_area;
     fd_cfg.MAX_BLOB_AREA = 20000;
     fd_cfg.PATTERN_MAX_SCORE = 150.0f;
     fd_cfg.MAX_OFFSET_SCORE = 0.6f;
     fd_cfg.ROI_RADIUS_MARGIN = 2.5f;
     fd_cfg.ROI_BORDER_PX = 10;
-    fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::LEDS;
+    fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::RAW_BLOBS;
 
     vbn::StaticPoseEstimatorConfig spe_cfg{};
-    // Camera intrinsics (TODO: plug in real calibration)
-    spe_cfg.CAM_INTRINSICS.fx = 908.62425565f;          // [px] placeholder
-    spe_cfg.CAM_INTRINSICS.fy = 908.92570486f;          // [px] placeholder
-    spe_cfg.CAM_INTRINSICS.cx = cap_cfg.width * 0.5f;        // assume principal point at image centre
-    spe_cfg.CAM_INTRINSICS.cy = cap_cfg.height * 0.5f;
-    // spe_cfg.CAM_INTRINSICS.cx = 643.93436085f;       
-    // spe_cfg.CAM_INTRINSICS.cy = 393.45889572f;
-    spe_cfg.CAM_INTRINSICS.k1 = 0.0f;
-    spe_cfg.CAM_INTRINSICS.k2 = 0.0f;
-    spe_cfg.CAM_INTRINSICS.k3 = 0.0f;
-    spe_cfg.CAM_INTRINSICS.p1 = 0.0f;
-    spe_cfg.CAM_INTRINSICS.p2 = 0.0f;
-    // Pattern geometry (TODO: plug in your real D,H in meters)
-    spe_cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.010f;   // 1 cm
-    spe_cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.010f;   // H = D for analytic v1
-    // Algorithm selection + reprojection threshold
-    //spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_INNER;
-    spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;
-    spe_cfg.MAX_REPROJ_ERROR_PX = 600.0f;                 // from your config
-
+    // SPE Not Needed
 
     // ---- MODULES ----
     vbn::ImageCapture cap(cap_cfg);
@@ -95,11 +140,11 @@ int main() {
     // Configure monitor
     mon_ctx.cfg.enable_server    = true;   // MJPEG HTTP
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
-    mon_ctx.cfg.enable_csv       = false;  
-    mon_ctx.cfg.testcase         = ground::Test::NONE;
-    // mon_ctx.cfg.log_n = 100;
-    // mon_ctx.cfg.log_every = 1;
-    // mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
+    mon_ctx.cfg.enable_csv       = true;  
+    mon_ctx.cfg.testcase         = ground::Test::CENTROID_LOG;
+    mon_ctx.cfg.log_n = 100;
+    mon_ctx.cfg.log_every = 1;
+    mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
     mon_ctx.cfg.port = 8080;
     mon_ctx.cfg.snapshot_period_ms = 200;
     mon_ctx.cfg.stream_fps = 10;
