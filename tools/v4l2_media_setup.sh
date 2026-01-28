@@ -7,7 +7,7 @@ set -euo pipefail
 WIDTH=1280
 HEIGHT=800
 
-EXPOSURE=100
+EXPOSURE=$1
 GAIN=16
 
 # Optional: set vertical blanking. Leave empty to not touch it.

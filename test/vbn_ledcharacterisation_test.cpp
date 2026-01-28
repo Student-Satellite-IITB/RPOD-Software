@@ -20,7 +20,7 @@
 
 struct Args {
     uint16_t bin_thresh = 250; // native DN units (e.g. 250 for 10-bit data)
-    int min_area = 50;
+    int min_area = 0;
     
 };
 
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
     fd_cfg.PATTERN_MAX_SCORE = 150.0f;
     fd_cfg.MAX_OFFSET_SCORE = 0.6f;
     fd_cfg.ROI_RADIUS_MARGIN = 2.5f;
-    fd_cfg.ROI_BORDER_PX = 10;
+    fd_cfg.ROI_BORDER_PX = 300;
     fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::FILTERED_BLOBS;
 
     vbn::StaticPoseEstimatorConfig spe_cfg{};
@@ -142,8 +142,8 @@ int main(int argc, char** argv) {
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
     mon_ctx.cfg.enable_csv       = true;  
     mon_ctx.cfg.testcase         = ground::Test::CENTROID_LOG;
-    mon_ctx.cfg.log_n = 100;
-    mon_ctx.cfg.log_every = 1;
+    mon_ctx.cfg.log_n = 1000;
+    mon_ctx.cfg.log_every = 5;
     mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
     mon_ctx.cfg.port = 8080;
     mon_ctx.cfg.snapshot_period_ms = 200;
