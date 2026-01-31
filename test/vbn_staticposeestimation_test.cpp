@@ -42,6 +42,10 @@ int main(int argc, char** argv) {
 
     // Hard-coded for now based on setting in simulator
     int BIT_DEPTH = 10;
+
+    // 6 if MSB Aligned 
+    // 0 if LSB aligned
+    int BIT_SHIFT = 6; 
     
     if (img.empty()) {
         std::cerr << "ERROR: Could not load image: " << input_path.string() << "\n";
@@ -68,7 +72,7 @@ int main(int argc, char** argv) {
     // Examples: RAW8 -> 8, RAW10 -> 10, RAW12 -> 12, RAW16 -> 16.
     // Note: RAW10 may be stored in 16-bit containers (bytes_per_px=2, bit_depth=10).
     // input.bit_shift = 0; // LSB aligned containers
-    input.bit_shift = 6; // RAW10 MSB-aligned in uint16 container (bits [15..6])
+    input.bit_shift = static_cast<uint8_t>(BIT_SHIFT); // RAW10 MSB-aligned in uint16 container (bits [15..6])
 
     // -----------------------------
     // Open results file early (so failures still log metadata)

@@ -394,7 +394,7 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
 
 bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, float az, float el, Pose& pose) const{
 
-    // Assumptions: Weak Perspective Projection
+    // Assumptions: Para-Perspective Projection
 
     using Mat53 = Eigen::Matrix<float, 5, 3>;
     using Vec5  = Eigen::Matrix<float, 5, 1>;
@@ -409,13 +409,40 @@ bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, f
     const msg::Feature& R = packed.inner[3];
     const msg::Feature& C = packed.inner[4];
 
-    // Pattern centre in PPF
-    const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
-    const float v_c = 0.25f * (T.v_px + L.v_px + B.v_px + R.v_px);
+    
+    // Computing Pattern Origin (Centre)
+    Vec3 pT,pL,pB,pR,pC;
 
-    // Normalised center coordinates
-    const float x_c = u_c/fx;
-    const float y_c = v_c/fy;
+    pT << T.u_px/fx, T.v_px/fy, 1.0f;
+    pB << B.u_px/fx, B.v_px/fy, 1.0f;
+    pL << L.u_px/fx, L.v_px/fy, 1.0f;
+    pR << R.u_px/fx, R.v_px/fy, 1.0f;
+
+    pC = (pT.cross(pB)).cross(pL.cross(pR));
+
+    const float w = pC.z();
+
+    float x_c = 0;
+    float y_c = 0;
+
+    if (std::abs(w) < 1e-6f) {
+        // w becomes near zero when the point is a point at infinity (direction), 
+        // which corresponds to two lines that are parallel in Euclidean sense.
+        //return false or fall back to average center
+        // Pattern centre in PPF
+        const float u_c = 0.25f * (T.u_px + L.u_px + B.u_px + R.u_px);
+        const float v_c = 0.25f * (T.v_px + L.v_px + B.v_px + R.v_px);
+
+        // Normalised center coordinates
+        x_c = u_c/fx;
+        y_c = v_c/fy;
+
+    }
+    else{
+        x_c = pC.x() / w;
+        y_c = pC.y() / w;
+    }
+    
 
     // Normalised LED coordinate stack
     Vec5 X,Y;
@@ -646,7 +673,20 @@ float vbn::StaticPoseEstimator::evaluateReprojectionError(const PackedLeds& pack
         float du = obs_led.u_px - u_proj;
         float dv = obs_led.v_px - v_proj;
 
+        // Normalised Error
+        // Represents ray error (closer to imaging geometry)
+        // Project to image plane (PPF)
+        // Normalised coordinates
+        float u_proj_n = P_cam.x() / Z;
+        float v_proj_n = P_cam.y() / Z;
+
+        // Normalised Reprojection error
+        float du_n = obs_led.u_px/fx - u_proj_n;
+        float dv_n = obs_led.v_px/fy - v_proj_n;
+
         sum_sq_error += du*du + dv*dv;
+        // Uncomment to use normalised error
+        // sum_sq_error += du_n*du_n + dv_n*dv_n;
         ++count;
     }  
     
