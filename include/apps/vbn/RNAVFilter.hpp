@@ -73,9 +73,9 @@ struct RNAVFilterConfig{
     // Filter update rate
     uint32_t PropagateHz = 100; // Hz
     
-    // Process noise covariance
-    float sigma_a = 0.05f; // [m/s^2]
-    float sigma_alpha = 0.05f; // [rad/s^2]
+    // Process noise covariance PSD (continuous-time white nose)
+    float q_a     = 2.5e-3f;  // [m^2/s^3]   (example default; tune)
+    float q_alpha = 2.5e-3f;  // [rad^2/s^3] (example default; tune)
 
     // Measurement noise covariance Baseline
     // To be updated to be adaptive based on pose quality later

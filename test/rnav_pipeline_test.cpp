@@ -74,8 +74,8 @@ int main() {
 
     rnav::RNAVFilterConfig rnav_cfg{};
     rnav_cfg.PropagateHz = 100;
-    rnav_cfg.sigma_a = 0.05f;
-    rnav_cfg.sigma_alpha = 0.05f;
+    rnav_cfg.q_a = 0.05f;
+    rnav_cfg.q_alpha = 0.05f;
     rnav_cfg.sigma_r = 0.02f;
     rnav_cfg.sigma_theta = 0.005f;
     rnav_cfg.enable_gating = false;

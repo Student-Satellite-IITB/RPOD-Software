@@ -139,17 +139,20 @@ static inline rnav::Pose pose_compose(const rnav::Pose& H_AbyB,
     return H_AbyC;
 }
 
-// Discrete process noise for constant-velocity model (3D) with accel noise sigma_a.
-// Q_rv = sigma_a^2 * [[dt^4/4 I, dt^3/2 I],[dt^3/2 I, dt^2 I]]
-static inline void add_Q_rv(EMat12& Q, float dt, float sigma_a){
-    const float s2 = sigma_a * sigma_a;
-    const float dt2 = dt*dt;
-    const float dt3 = dt2*dt;
-    const float dt4 = dt2*dt2;
+// Continuous-time white acceleration noise discretized over dt (3D).
+// Model: rdot = v, vdot = w_a(t),  E[w_a(t) w_a(τ)^T] = q_a * δ(t-τ) * I
+// Discrete Q_rv = q_a * [[dt^3/3 I, dt^2/2 I],
+//                       [dt^2/2 I, dt     I]]
+// NOTE: q_a is a noise intensity (PSD) with units m^2/s^3 (NOT m/s^2).
+static inline void add_Q_rv(EMat12& Q, float dt, float q_a){
+    if (dt <= 0.0f || q_a <= 0.0f) return;
 
-    const float q_rr = s2 * (dt4 * 0.25f);
-    const float q_rv = s2 * (dt3 * 0.5f);
-    const float q_vv = s2 * (dt2);
+    const float dt2 = dt * dt;
+    const float dt3 = dt2 * dt;
+
+    const float q_rr = q_a * (dt3 / 3.0f);
+    const float q_rv = q_a * (dt2 / 2.0f);
+    const float q_vv = q_a * (dt);
 
     // indices: dr(0..2), dv(3..5)
     for(int i=0;i<3;i++){
@@ -160,17 +163,21 @@ static inline void add_Q_rv(EMat12& Q, float dt, float sigma_a){
     }
 }
 
-// Discrete process noise for attitude error + omega random walk with angular accel noise sigma_alpha.
-// Same structure on (dtheta, dw)
-static inline void add_Q_thw(EMat12& Q, float dt, float sigma_alpha){
-    const float s2 = sigma_alpha * sigma_alpha;
-    const float dt2 = dt*dt;
-    const float dt3 = dt2*dt;
-    const float dt4 = dt2*dt2;
+// Continuous-time white angular-acceleration noise discretized over dt (3D).
+// Model: dtheta_dot = domega, domega_dot = w_alpha(t),
+//        E[w_alpha(t) w_alpha(τ)^T] = q_alpha * δ(t-τ) * I
+// Discrete Q_thw = q_alpha * [[dt^3/3 I, dt^2/2 I],
+//                            [dt^2/2 I, dt     I]]
+// NOTE: q_alpha is a noise intensity (PSD) with units rad^2/s^3 (NOT rad/s^2).
+static inline void add_Q_thw(EMat12& Q, float dt, float q_alpha){
+    if (dt <= 0.0f || q_alpha <= 0.0f) return;
 
-    const float q_tt = s2 * (dt4 * 0.25f);
-    const float q_tw = s2 * (dt3 * 0.5f);
-    const float q_ww = s2 * (dt2);
+    const float dt2 = dt * dt;
+    const float dt3 = dt2 * dt;
+
+    const float q_tt = q_alpha * (dt3 / 3.0f);
+    const float q_tw = q_alpha * (dt2 / 2.0f);
+    const float q_ww = q_alpha * (dt);
 
     // indices: dtheta(6..8), dw(9..11)
     for(int i=0;i<3;i++){
@@ -180,6 +187,7 @@ static inline void add_Q_thw(EMat12& Q, float dt, float sigma_alpha){
         Q(9+i,9+i)     += q_ww;
     }
 }
+
 
 static inline rnav::Quat ExpQ(const EVec3& theta) {
     const float a = theta.norm();         // angle (rad)
@@ -471,8 +479,8 @@ void RNAVFilter::Propagate(float dt_s){
     }
 
     EMat12 Q = EMat12::Zero();
-    add_Q_rv(Q, dt, m_cfg.sigma_a);
-    add_Q_thw(Q, dt, m_cfg.sigma_alpha);
+    add_Q_rv(Q, dt, m_cfg.q_a);
+    add_Q_thw(Q, dt, m_cfg.q_alpha);
 
     EMat12 P = toE(m_P); // convert to Eigen
     P = F * P * F.transpose() + Q; 
