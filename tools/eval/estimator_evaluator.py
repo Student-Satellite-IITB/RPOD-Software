@@ -222,6 +222,7 @@ def plot_series(t, truth, meas, est, title, ylabel, out_dir, fname, t_conv=None)
     plt.ylabel(ylabel)
     plt.legend()
     savefig(out_dir, fname)
+    plt.close()
 
 
 def plot_error_with_sigma(t, err, sigma, title, ylabel, out_dir, fname, t_conv=None, ylim=None):
@@ -245,6 +246,7 @@ def plot_error_with_sigma(t, err, sigma, title, ylabel, out_dir, fname, t_conv=N
     plt.ylabel(ylabel)
     plt.legend()
     savefig(out_dir, fname)
+    plt.close()
 
 # ----------------------------
 # Convergence + coverage

@@ -10,6 +10,7 @@
 namespace{
 
 using EVec3 = Eigen::Vector3f;
+using EMat3 = Eigen::Matrix3f;
 using EQuat = Eigen::Vector4f; // (w,x,y,z)
 using EMat12 = Eigen::Matrix<float,12,12>;
 using EMat6  = Eigen::Matrix<float, 6, 6>;
@@ -138,6 +139,33 @@ static inline rnav::Pose pose_compose(const rnav::Pose& H_AbyB,
 
     return H_AbyC;
 }
+
+static inline EMat3 Quat2DCM(const rnav::Quat& q_in)
+{
+    // Returns C_A/B consistent with v_A = R(q) v_B and v' = q v q*
+    const rnav::Quat q = quat_normalize(q_in);
+
+    const float w = q.w;
+    const float x = q.x;
+    const float y = q.y;
+    const float z = q.z;
+
+    EMat3 R;
+    R(0,0) = 1.0f - 2.0f*(y*y + z*z);
+    R(0,1) = 2.0f*(x*y - w*z);
+    R(0,2) = 2.0f*(x*z + w*y);
+
+    R(1,0) = 2.0f*(x*y + w*z);
+    R(1,1) = 1.0f - 2.0f*(x*x + z*z);
+    R(1,2) = 2.0f*(y*z - w*x);
+
+    R(2,0) = 2.0f*(x*z - w*y);
+    R(2,1) = 2.0f*(y*z + w*x);
+    R(2,2) = 1.0f - 2.0f*(x*x + y*y);
+
+    return R;
+}
+
 
 // Continuous-time white acceleration noise discretized over dt (3D).
 // Model: rdot = v, vdot = w_a(t),  E[w_a(t) w_a(τ)^T] = q_a * δ(t-τ) * I
@@ -453,10 +481,6 @@ void RNAVFilter::Propagate(float dt_s){
     EVec3 dtheta = w * dt_s;
     
     // Update orientation
-    // delta_q = ExpQ(dtheta)
-    // m_x.q_BcbyBt = quatmul(delta_q, m_x.q_BcbyBt)
-    // m_x.w_BcbyBt = m_x.w_BcbyBt; // constant
-
     // dq = ExpQ(dtheta)
     rnav::Quat dq = ExpQ(dtheta);
     // left-multiply: applies rotation in current body frame convention
@@ -465,18 +489,30 @@ void RNAVFilter::Propagate(float dt_s){
 
     m_x.w_BcbyBt = m_x.w_BcbyBt; // constant
 
+    // Constructing R(deltaq(w*dt))
+    const EMat3 R_delta = Quat2DCM(dq);
+    
     // Covariance propagation for error-state:
     // dx = [dr dv dtheta dw]
     // F ≈ [[I dtI 0  0],
     //      [0  I  0  0],
-    //      [0  0  I dtI],
+    //      [0  0  R dtR],
     //      [0  0  0  I ]]
     const float dt = dt_s;
     EMat12 F = EMat12::Identity();
-    for(int i=0;i<3;i++){
-        F(i,3+i)     = dt;  // dr depends on dv
-        F(6+i,9+i)   = dt;  // dtheta depends on dw
-    }
+
+    // Translation blocks: dr_{k+1} = dr_k + dt * dv_k
+    F.block<3,3>(0,3) = EMat3::Identity() * dt;
+
+    // Attitude error blocks:
+    // dtheta_{k+1} = R_delta * dtheta_k + R_delta * dt * dw_k
+
+    // Small w*dt approximation would make R_delta ≈ I
+    // F.block<3,3>(6,6) = EMat3::Identity();
+    // F.block<3,3>(6,9) = EMat3::Identity() * dt;
+
+    F.block<3,3>(6,6) = R_delta;
+    F.block<3,3>(6,9) = R_delta * dt;
 
     EMat12 Q = EMat12::Zero();
     add_Q_rv(Q, dt, m_cfg.q_a);
