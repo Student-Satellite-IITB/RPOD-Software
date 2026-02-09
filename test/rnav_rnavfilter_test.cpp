@@ -42,22 +42,27 @@
 static const char*  CSV_PATH         = "../tools/data/tmp/rnav_filter_log.csv";
 
 static constexpr float   T_SEC       = 10.0f;     // test duration (seconds)
-static constexpr float   MEAS_HZ     = 100.0f;    // measurement producer rate
+static constexpr float   TRUTH_HZ    = 100.0f;    // truth update rate (Hz)
+static constexpr float   MEAS_HZ     = 20.0f;    // measurement producer rate
 static constexpr uint64_t WAIT_US    = 200000ULL; // wait for fused state per measurement (us)
 static constexpr int     STARTUP_MS  = 50;        // let RNAV task start
 
 // Truth initial conditions
-static constexpr float R0_X = 1.0f;
-static constexpr float R0_Y = 0.5f;
-static constexpr float R0_Z = -0.2f;
+static constexpr float R0_X = -1.0f;
+static constexpr float R0_Y = 0.05f;
+static constexpr float R0_Z = 0.03f;
 
-static constexpr float V0_X = 0.05f;
-static constexpr float V0_Y = -0.02f;
-static constexpr float V0_Z = 0.00f;
+static constexpr float V0_X = 0.02f;
+static constexpr float V0_Y = 0.00f;
+static constexpr float V0_Z = -0.001f;
 
 static constexpr float W0_X = 0.00f;
 static constexpr float W0_Y = 0.00f;
-static constexpr float W0_Z = 0.01f;
+static constexpr float W0_Z = 0.00f;
+
+// Process noise
+static constexpr float Q_A     = 1e-3f;   // m^2/s^3
+static constexpr float Q_ALPHA = 1e-2f;  //rad^2/s^3 
 
 // Measurement noise (also copied into filter cfg here)
 static constexpr float SIGMA_R     = 0.02f;   // meters
@@ -255,6 +260,13 @@ static bool wait_for_fused_state(rnav::StateEstimateQueue& state_q,
     }
 }
 
+static float sine_bump(float t, float t0, float t1, float peak){
+    if (t <= t0 || t >= t1) return 0.0f;
+    const float s = (t - t0) / (t1 - t0);     // 0..1
+    return peak * std::sin(3.1415926f * s);   // 0..peak..0
+}
+
+
 int main() {
     std::cout << "=== RNAV FILTER UNIT TEST (synthetic, CSV) ===\n";
 
@@ -265,6 +277,8 @@ int main() {
     // Filter config: identity extrinsics => FrameTransformation pass-through
     rnav::RNAVFilterConfig cfg{};
     cfg.PropagateHz = PROPAGATE_HZ;
+    cfg.q_a = Q_A;
+    cfg.q_alpha = Q_ALPHA;
     cfg.sigma_r = SIGMA_R;
     cfg.sigma_theta = SIGMA_THETA;
     cfg.enable_gating = false;
@@ -316,8 +330,14 @@ int main() {
     const float meas_hz = MEAS_HZ;
     const float meas_dt = 1.0f / meas_hz;
 
+    const float truth_dt = 1/TRUTH_HZ; // truth updates at filter propagate rate
+
     const int N = (int)std::ceil(T_SEC * meas_hz);
+
     float t_sim = 0.0f;
+
+    float next_meas_t = 0.0f; // send first meas at t=0 (or set = meas_dt for first at 1 period)
+    const int N_truth = (int)std::ceil(T_SEC / truth_dt);
 
     // Let the filter task start and initialize cleanly
     Rtos::SleepMs(STARTUP_MS);
@@ -335,19 +355,41 @@ int main() {
     // Real-time pacing of measurement producer (prevents bursting)
     uint64_t next_send_us = now_us();
 
-    for (int i = 0; i < N; ++i) {
-        // advance simulation truth by meas_dt
-        r_true[0] += v_true[0] * meas_dt;
-        r_true[1] += v_true[1] * meas_dt;
-        r_true[2] += v_true[2] * meas_dt;
+    uint64_t next_truth_us = now_us();          // or now_us() + truth_dt_us to start one tick later
+    uint64_t truth_dt_us   = (uint64_t)(1e6f / TRUTH_HZ);
 
-        float dth_truth[3] = { w_true[0]*meas_dt, w_true[1]*meas_dt, w_true[2]*meas_dt };
+    for (int i = 0; i < N_truth; ++i) {
+        const float t_next = t_sim + truth_dt;
+
+        // (A) Update scripted truth inputs using t_next (omega bumps etc)
+        // Example (uncomment / adapt):
+        // w_true[1] = W0_Y
+        //          + sine_bump(t_next, 2.0f, 4.0f, 0.3f)
+        //          + sine_bump(t_next, 4.0f, 6.0f, -0.3f);
+
+        // (B) Propagate truth using truth_dt (NOT meas_dt)
+        r_true[0] += v_true[0] * truth_dt;
+        r_true[1] += v_true[1] * truth_dt;
+        r_true[2] += v_true[2] * truth_dt;
+
+        float dth_truth[3] = { w_true[0]*truth_dt, w_true[1]*truth_dt, w_true[2]*truth_dt };
         float dq_truth[4], qnew[4];
         quat_exp(dth_truth, dq_truth);
         quat_mul(dq_truth, q_true, qnew);
         q_true[0]=qnew[0]; q_true[1]=qnew[1]; q_true[2]=qnew[2]; q_true[3]=qnew[3];
 
-        t_sim += meas_dt;
+        t_sim = t_next;
+
+        // ---- pace EVERY truth tick ----
+        next_truth_us += truth_dt_us;
+        Rtos::SleepUntilUs(next_truth_us);
+
+        // (C) Only send measurement when it's time
+        if (t_sim + 1e-9f < next_meas_t) {
+            continue; // keep integrating truth, no measurement this tick
+        }
+
+        next_meas_t += meas_dt;
 
         // send measurement
         msg::PoseEstimate m{};
