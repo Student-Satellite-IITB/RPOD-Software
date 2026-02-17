@@ -167,10 +167,10 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
     input.height       = static_cast<uint32_t>(img.rows);
     input.stride       = static_cast<uint32_t>(img.step);        // bytes per row
     input.bytes_per_px = static_cast<uint8_t>(img.elemSize1());  // 1 for 8U, 2 for 16U
-    input.bit_depth    = static_cast<uint8_t>(8 * img.elemSize1()); // container bit-depth (8 or 16)
-    input.bit_shift    = 0; // LSB aligned containers
+    input.bit_depth    = 10; // RAW10 in 16-bit containers
+    input.bit_shift    = 6;  // MSB aligned containers
 
-    // Configure FD
+    // Configure FD.
     vbn::FeatureDetectorConfig det_cfg;
     det_cfg.BIN_THRESH = args.bin_thresh;
     det_cfg.MIN_BLOB_AREA = 50;

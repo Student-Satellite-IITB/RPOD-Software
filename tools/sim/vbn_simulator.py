@@ -23,6 +23,8 @@ BLACK_DN = 0            # 0..(2^BIT_DEPTH - 1)
 # Output packing options (how we store DN inside uint16 container when saving)
 OUTPUT_MSB_ALIGNED = True   # False = LSB-aligned (default), True = MSB-aligned
 
+PREVIEW_ENABLE = False     # Whether to save a preview.png (8-bit view of the image)
+
 OUT_PATH  = "tools/data/cases/sim/tmp_case/image.png"
 PREVIEW_PATH = "tools/data/cases/sim/tmp_case/preview.png"
 TRUTH_PATH = "tools/data/cases/sim/tmp_case/truth.txt"
@@ -258,22 +260,16 @@ def los_dir_from_az_el(az_deg, el_deg):
     d /= np.linalg.norm(d)
     return d
 
-def project_vbn_centered(pts_pat_mm, roll, pitch, yaw, range_mm, fx, fy, az_deg, el_deg):
+def project_vbn_centered(pts_pat_mm, R_cam, t_cam_mm, fx, fy):
     """
     Returns centered pixel coords (u,v) with principal point at (0,0),
     matching your VBN reprojection formula u=fx*X/Z, v=fy*Y/Z.
     """
-    dir_vec = los_dir_from_az_el(az_deg, el_deg)
-    t = (range_mm * dir_vec).astype(np.float32)
-
-    R_aero = R_C_P_321_aero(roll, pitch, yaw)     # in aero basis
-    R  = P_CAM_TO_AERO.T @ R_aero @ P_CAM_TO_AERO # in camera basis
-
     # pts_pat_mm (NX3) converted to 3XN for matrix multiplication
     # R @ pts_pat_mm.T (3xN) converted back to NX3 for further computation
     # t (3,) 1D Array reshape(1,3) makes it a 1X3 row vector and numpy adds considering NX3 each row + t
-    pts_cam = (R @ pts_pat_mm.T).T + t.reshape(1,3)
 
+    pts_cam = (R_cam @ pts_pat_mm.T).T + t_cam_mm.reshape(1,3)
     X, Y, Z = pts_cam[:,0], pts_cam[:,1], pts_cam[:,2]
     u = fx * (X / Z)
     v = fy * (Y / Z)
@@ -311,7 +307,7 @@ def make_preview_u8(img_actual, bit_depth):
         return img_actual.astype(np.uint8, copy=True)
     return (img_actual >> (bit_depth - 8)).astype(np.uint8)
 
-def write_truth_txt(path, case_id, uv_px, led_areas, R_cam, t_P_C_m,
+def write_truth_txt(path, case_id, uv_px, led_areas, R_aero, t_P_C_m,
                     blob_sigma_px, blur_sigma_px):
     with open(path, "w") as f:
         f.write(f"case_id = {case_id}\n")
@@ -335,8 +331,8 @@ def write_truth_txt(path, case_id, uv_px, led_areas, R_cam, t_P_C_m,
         f.write(f"t_z_m_true = {t_P_C_m[2]:.9f}\n")
         f.write(f"range_m_true = {float(np.linalg.norm(t_P_C_m)):.9f}\n")
 
-        # Rotation matrix (camera-basis, row-major)
-        R = R_cam.reshape(-1)
+        # Rotation matrix (camera-basis, aero-convention, row-major)
+        R = R_aero.reshape(-1)
         f.write("R_C_P_true = " + " ".join([f"{x:.9f}" for x in R]) + "\n")
 
         # Meta / nuisance
@@ -366,27 +362,32 @@ if __name__ == "__main__":
 
     # Generate pattern points
     pts_pat = make_inner_pattern_vbn(PATTERN_RADIUS_MM)
+
+    R_aero = R_C_P_321_aero(np.deg2rad(ROLL_DEG), np.deg2rad(PITCH_DEG), np.deg2rad(YAW_DEG))     # aero basis, store this
+    R_cam  = P_CAM_TO_AERO.T @ R_aero @ P_CAM_TO_AERO  # camera basis, use only for projection
+
+    t_cam_mm = (RANGE_M * 1000.0 * los_dir_from_az_el(AZIMUTH_DEG, ELEVATION_DEG)).astype(np.float32) # in camera frame, for projection
+    
+
     # Project to image plane
-    uv_c, _ = project_vbn_centered(
-        pts_pat, np.deg2rad(ROLL_DEG), np.deg2rad(PITCH_DEG), np.deg2rad(YAW_DEG),
-        range_mm= RANGE_M*1000.0, fx=FX, fy=FY,
-        az_deg=AZIMUTH_DEG, el_deg=ELEVATION_DEG
-    )
+    # uv_c, _ = project_vbn_centered(
+    #     pts_pat, np.deg2rad(ROLL_DEG), np.deg2rad(PITCH_DEG), np.deg2rad(YAW_DEG),
+    #     range_mm= RANGE_M*1000.0, fx=FX, fy=FY,
+    #     az_deg=AZIMUTH_DEG, el_deg=ELEVATION_DEG
+    # )
+
+    uv_c, _ = project_vbn_centered(pts_pat, R_cam, t_cam_mm, fx=FX, fy=FY)
+
     # Convert centered coords -> actual pixel indices for drawing
     uv_px = uv_c.copy()
     uv_px[:,0] += (W * 0.5)
     uv_px[:,1] += (H * 0.5)
 
      # ----- Truth pose quantities for truth.txt -----
-    dir_vec = los_dir_from_az_el(AZIMUTH_DEG, ELEVATION_DEG)           # unit LOS in camera frame
-    t_PbyC_mm = (RANGE_M * 1000.0) * dir_vec                           # camera -> pattern origin, in mm (as used in projection)
-    t_CbyP_m  = (-(t_PbyC_mm/1000) * dir_vec ).astype(np.float32)      # pattern -> camera origin, in meters (what you asked to store)
+    t_CbyP_m  = -t_cam_mm/1000 # translation of camera origin w.r.t pattern origin, in camera frame (camera-basis)
     # Axis-convention change to ensure compatibility with algorithm output
-    t_CbyP_m = P_CAM_TO_AERO @ t_CbyP_m
+    t_CbyP_m = P_CAM_TO_AERO @ t_CbyP_m # translation of camera origin w.r.t. patterb origin, in camera frame (aero-basis)
     range_m_true = float(np.linalg.norm(t_CbyP_m))
-
-    R_aero = R_C_P_321_aero(np.deg2rad(ROLL_DEG), np.deg2rad(PITCH_DEG), np.deg2rad(YAW_DEG))
-    R_cam  = P_CAM_TO_AERO.T @ R_aero @ P_CAM_TO_AERO                 # camera-basis rotation used for projection
 
     blob_diameter_px = blob_diameter(LED_DIAMETER_MM, RANGE_M*1000.0, FX)
     # Draw blobs
@@ -422,12 +423,13 @@ if __name__ == "__main__":
 
     cv2.imwrite(OUT_PATH, img_out)
 
-    # Preview should be made from DN, not the MSB-packed container.
-    # # If you pass img_out here, it'll look "white" because values are huge.
-    img_preview = make_preview_u8(img, BIT_DEPTH)
-    cv2.imwrite(PREVIEW_PATH, img_preview)
+    if PREVIEW_ENABLE:
+        # Preview should be made from DN, not the MSB-packed container.
+        # # If you pass img_out here, it'll look "white" because values are huge.
+        img_preview = make_preview_u8(img, BIT_DEPTH)
+        cv2.imwrite(PREVIEW_PATH, img_preview)
 
-    write_truth_txt(TRUTH_PATH, case_id, uv_px, led_areas, R_cam, t_CbyP_m,
+    write_truth_txt(TRUTH_PATH, case_id, uv_px, led_areas, R_aero, t_CbyP_m,
                     sigma_px, BLUR_SIGMA if False else 0.0)
 
     print(f"[SIM] case_id={case_id}")
