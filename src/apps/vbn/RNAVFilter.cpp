@@ -2,7 +2,6 @@
 #include "apps/vbn/RNAVFilter.hpp"
 
 #include <cmath>
-#include <iostream>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -663,6 +662,89 @@ bool RNAVFilter::AcceptMeasurement(const msg::PoseEstimate& meas, uint64_t now_u
         // Measurement timestamp in the future -> clock mismatch; reject conservatively
         return false;
     }
+
+    return true;
+}
+
+// FOR TESTING PURPOSE ONLY
+// This public function is not used in the main Run() loop of RNAVFilter
+
+bool RNAVFilter::processMeasurement(const msg::PoseEstimate& meas, msg::RNAVState& out)
+{
+    const uint64_t t0_us = Rtos::NowUs();
+
+    // // Basic time consistency / timeout
+    // if (!AcceptMeasurement(meas, t0_us)) {
+    //     return false;
+    // }
+
+    // Initialize on first valid measurement
+    if (!m_has_initialized) {
+        RNAVMeasurement z0{};
+        FrameTransformation(meas, z0);
+
+        m_x.r_BcbyBt = z0.r_BcbyBt;
+        m_x.v_BcbyBt = Vec3::Zero();
+        m_x.q_BcbyBt = z0.q_BcbyBt;
+        m_x.w_BcbyBt = Vec3::Zero();
+
+        m_P = Mat12::Identity();
+
+        m_has_initialized = true;
+        m_last_meas_us = meas.t_exp_end_us;
+        m_last_fused_meas_us = meas.t_exp_end_us;
+    } else {
+        // Propagate from last tick to this measurement time (clamped)
+        uint64_t dt_us = (meas.t_exp_end_us > m_last_meas_us)
+            ? (meas.t_exp_end_us - m_last_meas_us)
+            : 0;
+
+        float dt_s = (float)dt_us * 1e-6f;
+        if (dt_s < 0.0f) dt_s = 0.0f;
+        if (dt_s > 0.1f) dt_s = 0.1f;   // same safety clamp philosophy as Run()
+
+        Propagate(dt_s);
+
+        // Update using this measurement
+        RNAVMeasurement z{};
+        FrameTransformation(meas, z);
+        const bool fused = Update(z);
+
+        m_last_meas_us = meas.t_exp_end_us;
+        if (fused) {
+            m_last_fused_meas_us = meas.t_exp_end_us;
+        }
+    }
+
+    const uint64_t t1_us = Rtos::NowUs();
+    const uint64_t exec_us = (t1_us >= t0_us) ? (t1_us - t0_us) : 0;
+
+    // Populate output state (same mapping as Run())
+    out.t_meas_us = m_last_fused_meas_us;
+    out.t_pub_us  = t1_us;
+    out.exec_us   = exec_us;
+
+    out.r_nav[0] = m_x.r_BcbyBt.x;
+    out.r_nav[1] = m_x.r_BcbyBt.y;
+    out.r_nav[2] = m_x.r_BcbyBt.z;
+
+    out.v_nav[0] = m_x.v_BcbyBt.x;
+    out.v_nav[1] = m_x.v_BcbyBt.y;
+    out.v_nav[2] = m_x.v_BcbyBt.z;
+
+    out.q_rel[0] = m_x.q_BcbyBt.w;
+    out.q_rel[1] = m_x.q_BcbyBt.x;
+    out.q_rel[2] = m_x.q_BcbyBt.y;
+    out.q_rel[3] = m_x.q_BcbyBt.z;
+
+    out.w_rel[0] = m_x.w_BcbyBt.x;
+    out.w_rel[1] = m_x.w_BcbyBt.y;
+    out.w_rel[2] = m_x.w_BcbyBt.z;
+
+    for (int i = 0; i < 12*12; ++i) out.P[i] = m_P.data[i];
+
+    // mode: if you have an enum, set it meaningfully; else leave 0
+    // out.mode = ...;
 
     return true;
 }

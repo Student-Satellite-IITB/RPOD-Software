@@ -21,3 +21,16 @@ Now run the executable
 ./<MyExecutable>
 ```
 Check the annotated image in the test directory.
+
+## STM32-BUILD
+
+```bash
+cmake -S . -B build/stm32-debug -G Ninja \
+  -DTARGET_PLATFORM=stm32 \
+  -DSTM32_BOARD=nucleo_h7a3ziq \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/stm32-toolchain.cmake
+```
+```bash
+cmake --build build/stm32-debug
+```

@@ -7,7 +7,6 @@
 #include <chrono>
 
 #include "os/rtos.hpp"
-#include "apps/queues.hpp"
 
 cv::Mat img;
 msg::ImageFrame input;
@@ -33,6 +32,8 @@ static inline uint64_t now_us() {
         clock::now().time_since_epoch()).count();
 }
 static uint32_t g_frame_id = 0;
+
+Rtos::Queue<msg::ImageFrame, 1> imageFrameQueue(/*overwrite=*/true);
 
 // === Image Capture Task Loop ===
 // to be replaced by camera driver interface

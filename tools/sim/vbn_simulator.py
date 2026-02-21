@@ -52,7 +52,7 @@ PATTERN = "INNER"
 PATTERN_RADIUS_MM = 10.0 
 PATTERN_OFFSET_MM = 10.0  
 
-LED_DIAMETER_MM = 5.0
+LED_DIAMETER_MM = 1.0
 
 BIN_THRESH_DN = 250  # should match FD det_cfg.BIN_THRESH
 LED_IDS = ["T", "L", "B", "R", "C"]  # matches make_inner_pattern_vbn() order
