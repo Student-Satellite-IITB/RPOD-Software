@@ -1,4 +1,4 @@
-#include "system/rcu.hpp"
+#include "system/rcu/rcu.hpp"
 
 // Pull in CubeMX-generated pin defines like LD2_GPIO_Port / LD2_Pin
 extern "C" {
@@ -63,6 +63,7 @@ static void quat_exp(const float theta[3], float q[4]) {
 
 namespace rpod::system::rcu {
 
+static Rtos::Queue<msg::PoseEstimate, 1> pose_q(/*overwrite=*/true);
 static rnav::RNAVFilter* g_filter = nullptr;
 static rnav::RNAVFilterConfig g_cfg{};
 
@@ -92,6 +93,42 @@ void init(void){
     printf("\r\n[RCU] RNAVFilter constructed\r\n");
 }
 
+static void synth_publish_pose_20hz()
+{
+    static float r_true[3] = {-1.0f, 0.05f, 0.03f};
+    static float v_true[3] = { 0.02f, 0.00f,-0.001f};
+    static float q_true[4] = { 1.0f, 0.0f, 0.0f, 0.0f};
+    static float w_true[3] = { 0.0f, 0.0f, 0.0f};
+
+    constexpr float dt = 0.05f; // 20 Hz
+    r_true[0] += v_true[0] * dt;
+    r_true[1] += v_true[1] * dt;
+    r_true[2] += v_true[2] * dt;
+
+    float dth[3] = { w_true[0]*dt, w_true[1]*dt, w_true[2]*dt };
+    float dq[4], qnew[4];
+    quat_exp(dth, dq);
+    quat_mul(dq, q_true, qnew);
+    q_true[0]=qnew[0]; q_true[1]=qnew[1]; q_true[2]=qnew[2]; q_true[3]=qnew[3];
+
+    msg::PoseEstimate m{};
+    m.t_exp_end_us = Rtos::NowUs()- 1000; // 1 ms earlier than 'now'
+    m.t_CbyP[0] = r_true[0];
+    m.t_CbyP[1] = r_true[1];
+    m.t_CbyP[2] = r_true[2];
+
+    m.q_C_P[0] = q_true[0];
+    m.q_C_P[1] = q_true[1];
+    m.q_C_P[2] = q_true[2];
+    m.q_C_P[3] = q_true[3];
+
+    m.reproj_rms_px = 0.5f;
+    m.valid = 1;
+
+    // overwrite mailbox: always succeeds
+    pose_q.try_send(m);
+}
+
 static inline void pulse(GPIO_TypeDef* port, uint16_t pin, uint32_t ms){
     HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
     HAL_Delay(ms);
@@ -106,63 +143,36 @@ void loop(void){
     // pulse(LED3_GPIO_PORT, LED3_PIN, 80);
     // pulse(LED2_GPIO_PORT, LED2_PIN, 80);
 
-    // Simple scripted “truth”
-    static float r_true[3] = {-1.0f, 0.05f, 0.03f};
-    static float v_true[3] = { 0.02f, 0.00f,-0.001f};
-    static float q_true[4] = { 1.0f, 0.0f, 0.0f, 0.0f};
-    static float w_true[3] = { 0.0f, 0.0f, 0.0f};
+    // Producer side (later this becomes "NCP RX handler publishes pose")
+    synth_publish_pose_20hz();
 
-    // Propagate truth with fixed dt
-    constexpr float dt = 0.05f; // 20 Hz measurement for quick UART visibility
-    r_true[0] += v_true[0] * dt;
-    r_true[1] += v_true[1] * dt;
-    r_true[2] += v_true[2] * dt;
+    // Consumer side
+    msg::PoseEstimate meas{};
 
-    float dth[3] = { w_true[0]*dt, w_true[1]*dt, w_true[2]*dt };
-    float dq[4], qnew[4];
-    quat_exp(dth, dq);
-    quat_mul(dq, q_true, qnew);
-    q_true[0]=qnew[0]; q_true[1]=qnew[1]; q_true[2]=qnew[2]; q_true[3]=qnew[3];
+    if (pose_q.try_receive(meas) && g_filter) {
+        msg::RNAVState out{};
+        const bool ok = g_filter->processMeasurement(meas, out);
 
-    // Create measurement exactly like your unit test expects
-    msg::PoseEstimate m{};
-    m.t_exp_end_us = Rtos::NowUs() - 1000; // 1 ms earlier than 'now'
+        // Print at 1 Hz only (don’t spam UART)
+        static int k = 0;
+        if ((k++ % 20) == 0) {
 
-    // No RNG on STM32 for now; just use “truth” directly (or add small fixed bias)
-    m.t_CbyP[0] = r_true[0];
-    m.t_CbyP[1] = r_true[1];
-    m.t_CbyP[2] = r_true[2];
+            // Split u64 print like you already did (safe on embedded printf)
+            const uint32_t lo = (uint32_t)(out.t_meas_us & 0xFFFFFFFFu);
+            const uint32_t hi = (uint32_t)(out.t_meas_us >> 32);
 
-    m.q_C_P[0] = q_true[0];
-    m.q_C_P[1] = q_true[1];
-    m.q_C_P[2] = q_true[2];
-    m.q_C_P[3] = q_true[3];
+            const int rx_mm = (int)(out.r_nav[0] * 1000.0f);
+            const int ry_mm = (int)(out.r_nav[1] * 1000.0f);
+            const int rz_mm = (int)(out.r_nav[2] * 1000.0f);
 
-    msg::RNAVState out{};
-
-    bool ok = false;
-    if (g_filter) ok = g_filter->processMeasurement(m, out);
-
-    // Print at 1 Hz only (don’t spam UART)
-    static int k = 0;
-    if ((k++ % 20) == 0) {
-
-        // Avoid float printf on embedded: print millimeters as integers
-        const int rx_mm = (int)(out.r_nav[0] * 1000.0f);
-        const int ry_mm = (int)(out.r_nav[1] * 1000.0f);
-        const int rz_mm = (int)(out.r_nav[2] * 1000.0f);
-
-        uint64_t t = out.t_meas_us;
-        uint32_t hi = (uint32_t)(t >> 32);
-        uint32_t lo = (uint32_t)(t & 0xFFFFFFFFu);
-
-        printf("[RNAV] ok=%d t_meas_hi=%lu t_meas_lo=%lu r_mm=(%d %d %d)\r\n",
-            ok ? 1 : 0,
-            (unsigned long)hi,
-            (unsigned long)lo,
-            rx_mm, ry_mm, rz_mm);
+            printf("[RNAV] ok=%d t_meas_hi=%lu t_meas_lo=%lu r_mm=(%d %d %d)\r\n",
+                   ok ? 1 : 0,
+                   (unsigned long)hi,
+                   (unsigned long)lo,
+                   rx_mm, ry_mm, rz_mm);
+        }
     }
-    
+
     HAL_GPIO_TogglePin(LED2_GPIO_PORT, LED2_PIN);
     HAL_Delay(50); // roughly matches dt=0.05s
 }

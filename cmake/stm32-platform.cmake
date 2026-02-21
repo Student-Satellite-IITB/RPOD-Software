@@ -2,7 +2,7 @@
 # STM32 build: CubeMX stm32cubemx + repo-owned entry + rcu_main composition
 
 set(RPOD_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
-set(EIGEN_DIR       ${CMAKE_SOURCE_DIR}/lib/eigen)
+set(EIGEN_DIR        ${CMAKE_SOURCE_DIR}/lib/eigen)
 
 if(NOT DEFINED STM32_BOARD)
     message(FATAL_ERROR "STM32_BOARD not set (e.g. -DSTM32_BOARD=nucleo_h7a3ziq)")
@@ -90,7 +90,7 @@ target_link_options(${FW_TARGET} PRIVATE
 # ---- Repo-owned entry + RCU composition ----
 add_library(rpod_rcu STATIC
   ${CMAKE_SOURCE_DIR}/src/platform/stm32/entry.cpp
-  ${CMAKE_SOURCE_DIR}/src/system/rcu_main.cpp
+  ${CMAKE_SOURCE_DIR}/src/system/rcu/rcu_main.cpp
   ${CMAKE_SOURCE_DIR}/src/apps/vbn/RNAVFilter.cpp
   # Temporary baremetal RTOS implementation
   ${CMAKE_SOURCE_DIR}/src/os/baremetal/rtos.cpp

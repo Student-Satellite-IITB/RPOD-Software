@@ -1,5 +1,5 @@
 #include "platform/stm32/entry.h"
-#include "system/rcu.hpp"
+#include "system/rcu/rcu.hpp"
 
 // C ABI glue functions to call into the C++ RCU implementation
 
