@@ -1,6 +1,7 @@
+// StaticPoseEstimator.cpp
+
 #include "apps/vbn/StaticPoseEstimator.hpp"
 #include <cmath>
-#include <iostream>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry> 
@@ -23,8 +24,14 @@ namespace {
 namespace vbn
 {
     struct Pose{
+    // Pose convention:
+    // R_C_P maps transforms coordinates from Pattern frame to Camera frame.
+    // t_CbyP is the vector from Pattern origin to Camera origin, expressed in C.
+    // Therefore for a point p_P, camera-frame coordinates are:
+    // p_C = R_C_P * p_P - t_CbyP
+
         Mat3 R = Mat3::Identity(); // Pattern to Camera Frame Transformation
-        Vec3 t = Vec3::Zero(); // Vector from Pattern Origin to Camera Origin
+        Vec3 t = Vec3::Zero();     // Vector from Pattern Origin to Camera Origin
     };
 } // namespace vbn
 
@@ -41,9 +48,6 @@ static inline StaticPoseEstimatorConfig sanitise(const StaticPoseEstimatorConfig
     // Check the validity of D and H; if not replace with defaults
     if (!(std::isfinite(D) && D > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.050f;
     if (!(std::isfinite(H) && H > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.020f;
-
-    const float D2 = cfg.PATTERN_GEOMETRY.PATTERN_RADIUS;
-    const float H2 = cfg.PATTERN_GEOMETRY.PATTERN_OFFSET;
 
     // Compute pseudo-inverse for your 5-point cross pattern:
     // Points: T(0,-D,0), L(-D,0,0), B(0,+D,0), R(+D,0,0), C(0,0,-H)
@@ -157,10 +161,24 @@ static inline void DCM2Quat_0123(const Mat3&R, float q[4]){
 
 vbn::StaticPoseEstimator::StaticPoseEstimator(const StaticPoseEstimatorConfig& cfg)
     : m_cfg(sanitise(cfg)) {
+    m_status = Status::OK;
+}
+
+const char* vbn::StaticPoseEstimator::StatusStr(StaticPoseEstimator::Status s) {
+    switch (s) {
+        case Status::OK: return "OK";
+        case Status::INVALID_FEATURE_FRAME: return "INVALID_FEATURE_FRAME";
+        case Status::PACK_LED_FAIL: return "PACK_LED_FAIL";
+        case Status::LOS_FAIL: return "LOS_FAIL";
+        case Status::POSE_FAIL: return "POSE_FAIL";
+        case Status::REPROJECTION_FAIL: return "REPROJECTION_FAIL";
+        default: return "UNKNOWN";
+    }
 }
 
 void vbn::StaticPoseEstimator::setConfig(const StaticPoseEstimatorConfig& cfg) {
     m_cfg = sanitise(cfg);
+    m_status = Status::OK;
 }
 
 bool vbn::StaticPoseEstimator::packetLeds(const msg::FeatureFrame& feature_frame, PackedLeds& packed){
@@ -610,7 +628,7 @@ bool vbn::StaticPoseEstimator::estimatePose(const PackedLeds& packed,
         //     return estimatePosePnpInner(packed, az, el roll, pitch, yaw, range_m);
 
         case AlgoType::ANALYTICAL_GENERIC:
-            return genericAnalyticalPose(packed, az, el, pose);
+            return genericAnalyticalPose(packed, pose);
 
         default:
             // Unknown algorithm type
@@ -696,12 +714,22 @@ float vbn::StaticPoseEstimator::evaluateReprojectionError(const PackedLeds& pack
 
 
 bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, msg::PoseEstimate& out) {
+    // INPUT VALIDATION
+    if (!feature_frame.valid || feature_frame.feat_count == 0) {
+        out.valid = 0;
+        m_status = Status::INVALID_FEATURE_FRAME;
+        return false;
+    }
+
+    // CLEAR PREVIOUS OUTPUT
+    out = {};
+    out.valid = 0;
 
     // PACKET LEDS
     PackedLeds packed{};
     if (!packetLeds(feature_frame, packed)) {
-        // If we don't have a valid inner pattern, we cannot estimate pose in v1
-        out.valid = 0; // Mark pose as invalid
+        out.valid = 0;
+        m_status = Status::PACK_LED_FAIL;
         return false;
     }
 
@@ -714,7 +742,8 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
     float el = 0.0f;
 
     if(!computeLosAngles(packed, az, el)) {
-        out.valid = 0; // Mark pose as invalid
+        out.valid = 0;
+        m_status = Status::LOS_FAIL;
         return false;
     }
 
@@ -727,18 +756,21 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
     Pose pose;
     
     if(!estimatePose(packed, az, el, pose)) {
-        out.valid = 0; // Mark pose as invalid
+        out.valid = 0;
+        m_status = Status::POSE_FAIL;
         return false;
     }
 
     DCM2Euler321(pose.R, roll, pitch, yaw);
-    range_m = pose.t.norm();
+    range_m = pose.t.norm(); // Full Range
+    // range_m = pose.t.x(); // On-Axis Range 
 
     // EVALUATE REPROJECTION ERROR
     float reproj_error = evaluateReprojectionError(packed, pose);
 
     if (reproj_error > m_cfg.MAX_REPROJ_ERROR_PX) {
-        out.valid = 0; // Mark pose as invalid
+        out.valid = 0;
+        m_status = Status::REPROJECTION_FAIL;
         return false;
     }
 
@@ -762,7 +794,6 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
         }
     }
 
-    // Placeholder translation: along camera Z only
     out.t_CbyP[0] = pose.t.x();
     out.t_CbyP[1] = pose.t.y();
     out.t_CbyP[2] = pose.t.z();
@@ -782,7 +813,9 @@ bool vbn::StaticPoseEstimator::estimate(const msg::FeatureFrame& feature_frame, 
     out.state = feature_frame.state;
     out.used_led_mask = 0x1F; // All 5 INNER LEDs used
     out.valid = 1; // Mark pose as valid
+    m_status = Status::OK;
 
     return true;
 }
+
 
