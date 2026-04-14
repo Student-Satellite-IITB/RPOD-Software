@@ -341,6 +341,7 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
     }
 
     // Configure SPE
+    
     vbn::StaticPoseEstimatorConfig spe_cfg;
     spe_cfg.CAM_INTRINSICS.fx = 908.62425565f;
     spe_cfg.CAM_INTRINSICS.fy = 908.92570486f;
@@ -353,6 +354,8 @@ static bool run_one_case(const fs::path& case_dir, const Args& args) {
     spe_cfg.CAM_INTRINSICS.p2 = 0.0f;
 
     spe_cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.010f;
+    // Introducing scale error in pattern geometry
+    // spe_cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.0103f; // +3% scale error -> expect ~3% range error and small angular errors
     spe_cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.010f;
 
     spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;

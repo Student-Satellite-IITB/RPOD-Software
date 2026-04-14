@@ -410,7 +410,7 @@ bool vbn::StaticPoseEstimator::estimatePoseAnalyticalInner(const PackedLeds& pac
     return true;
 }
 
-bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, float az, float el, Pose& pose) const{
+bool vbn::StaticPoseEstimator::genericAnalyticalPose(const PackedLeds& packed, Pose& pose) const{
 
     // Assumptions: Para-Perspective Projection
 
