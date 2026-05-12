@@ -25,9 +25,27 @@ struct CameraIntrinsics {
 };
 
 struct PatternGeometry {
+
+    // For standard 5-LED cross pattern, we can define the geometry using two parameters: D (radius) and H (center offset).
     float PATTERN_RADIUS = 0.050f;
     float PATTERN_OFFSET = 0.020f;
-    
+
+    // // Compute pseudo-inverse for your 5-point cross pattern:
+    // // Points: T(0,-D,0), L(-D,0,0), B(0,+D,0), R(+D,0,0), C(0,0,-H)
+    // const float inv2D = 1.0f / (2.0f * D);
+    // const float invH  = 1.0f / H;
+
+    // cfg.PATTERN_GEOMETRY.P_PINV = {
+    //      0.0f,  -inv2D, 0.0f,  inv2D, 0.0f,
+    //     -inv2D,  0.0f,  inv2D, 0.0f,  0.0f,
+    //      0.0f,   0.0f,  0.0f,  0.0f, -invH
+    // };
+
+    // Current implementation uses a precomputed generalised P and P_PINV for the 5-point pattern, 
+    // which allows for more flexible geometries in the future without changing the core algorithm.
+
+    // Should be stored in row-major order
+    std::array<float, 15> P = {};
     std::array<float, 15> P_PINV = {};
 };
 

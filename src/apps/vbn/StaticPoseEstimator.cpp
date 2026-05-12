@@ -42,23 +42,31 @@ namespace vbn {
 static inline StaticPoseEstimatorConfig sanitise(const StaticPoseEstimatorConfig& in) {
     StaticPoseEstimatorConfig cfg = in;
 
-    const float D = cfg.PATTERN_GEOMETRY.PATTERN_RADIUS;
-    const float H = cfg.PATTERN_GEOMETRY.PATTERN_OFFSET;
+    if (cfg.PATTERN_GEOMETRY.P.empty() || cfg.PATTERN_GEOMETRY.P_PINV.empty()) {
+    
+        float D = 0.050f;
+        float H = 0.020f;
+        
+        cfg.PATTERN_GEOMETRY.P = {
+            0.0f, -D, 0.0f,
+            -D, 0.0f, 0.0f,
+            0.0f, D, 0.0f,
+            D, 0.0f, 0.0f,
+            0.0f, 0.0f, -H
+        };
 
-    // Check the validity of D and H; if not replace with defaults
-    if (!(std::isfinite(D) && D > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.050f;
-    if (!(std::isfinite(H) && H > 0.0f)) cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.020f;
+        // Compute pseudo-inverse for your 5-point cross pattern:
+        // Points: T(0,-D,0), L(-D,0,0), B(0,+D,0), R(+D,0,0), C(0,0,-H)
+        const float inv2D = 1.0f / (2.0f * D);
+        const float invH  = 1.0f / H;
 
-    // Compute pseudo-inverse for your 5-point cross pattern:
-    // Points: T(0,-D,0), L(-D,0,0), B(0,+D,0), R(+D,0,0), C(0,0,-H)
-    const float inv2D = 1.0f / (2.0f * D);
-    const float invH  = 1.0f / H;
 
-    cfg.PATTERN_GEOMETRY.P_PINV = {
-         0.0f,  -inv2D, 0.0f,  inv2D, 0.0f,
-        -inv2D,  0.0f,  inv2D, 0.0f,  0.0f,
-         0.0f,   0.0f,  0.0f,  0.0f, -invH
-    };
+        cfg.PATTERN_GEOMETRY.P_PINV = {
+            0.0f,  -inv2D, 0.0f,  inv2D, 0.0f,
+            -inv2D,  0.0f,  inv2D, 0.0f,  0.0f,
+            0.0f,   0.0f,  0.0f,  0.0f, -invH
+        };
+    }
 
 
     // If invalid parameters are set, replace with safe defaults
@@ -651,20 +659,22 @@ float vbn::StaticPoseEstimator::evaluateReprojectionError(const PackedLeds& pack
     const auto& geom = m_cfg.PATTERN_GEOMETRY;
     const float fx = cam.fx;
     const float fy = cam.fy;
-    const float D = geom.PATTERN_RADIUS;
-    const float H = geom.PATTERN_OFFSET;
 
     // Inner Pattern Geometry in Pattern Frame
     // Pattern Frame Definition:
     // +X right, +Y down, +Z inwards of pattern plane (+V bar)
-    
-    const std::array<Vec3, 5> P_pat = {
-        Vec3( 0.0f, -D,   0.0f),  // TOP
-        Vec3(-D,    0.0f, 0.0f),  // LEFT
-        Vec3( 0.0f,  D,   0.0f),  // BOTTOM
-        Vec3( D,    0.0f, 0.0f),  // RIGHT
-        Vec3( 0.0f, 0.0f, -H)     // CENTER (towards camera)
-        // If using H: Vec3(0,0,-H)
+        
+    using Mat53RM = Eigen::Matrix<float, 5, 3, Eigen::RowMajor>;
+
+    // Load precomputed pattern geometry matrix (row-major 5x3)
+    Eigen::Map<const Mat53RM> P(m_cfg.PATTERN_GEOMETRY.P.data());
+
+    const std::array<Vec3, 5> P_pat = {\
+        P.row(0).transpose(), //TOP
+        P.row(1).transpose(), //LEFT
+        P.row(2).transpose(), //BOTTOM
+        P.row(3).transpose(), //RIGHT
+        P.row(4).transpose() //CENTER
     };
 
     Vec3 P_cam;
