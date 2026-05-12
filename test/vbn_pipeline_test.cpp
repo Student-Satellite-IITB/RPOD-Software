@@ -48,26 +48,47 @@ int main() {
     fd_cfg.ROI_BORDER_PX = 10;
     fd_cfg.OUTPUT_MODE = vbn::FDOutputMode::LEDS;
 
+
     vbn::StaticPoseEstimatorConfig spe_cfg{};
-    // Camera intrinsics (TODO: plug in real calibration)
-    spe_cfg.CAM_INTRINSICS.fx = 908.62425565f;          // [px] placeholder
-    spe_cfg.CAM_INTRINSICS.fy = 908.92570486f;          // [px] placeholder
-    spe_cfg.CAM_INTRINSICS.cx = cap_cfg.width * 0.5f;        // assume principal point at image centre
-    spe_cfg.CAM_INTRINSICS.cy = cap_cfg.height * 0.5f;
-    // spe_cfg.CAM_INTRINSICS.cx = 643.93436085f;       
-    // spe_cfg.CAM_INTRINSICS.cy = 393.45889572f;
+    // Camera intrinsics 
+    spe_cfg.CAM_INTRINSICS.fx = 914.19371272f;          // [px]
+    spe_cfg.CAM_INTRINSICS.fy = 912.973584465f;         // [px] 
+
+    spe_cfg.CAM_INTRINSICS.cx = 634.053841995f;       
+    spe_cfg.CAM_INTRINSICS.cy = 396.128720895f;
+
+    spe_cfg.CAM_INTRINSICS.s = 0.0f;  // skew
+    
     spe_cfg.CAM_INTRINSICS.k1 = 0.0f;
     spe_cfg.CAM_INTRINSICS.k2 = 0.0f;
     spe_cfg.CAM_INTRINSICS.k3 = 0.0f;
     spe_cfg.CAM_INTRINSICS.p1 = 0.0f;
     spe_cfg.CAM_INTRINSICS.p2 = 0.0f;
-    // Pattern geometry (TODO: plug in your real D,H in meters)
-    spe_cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.010f;   // 1 cm
-    spe_cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.010f;   // H = D for analytic v1
+
+    // Pattern geometry 
+ 
+    // D and H not currently used
+    spe_cfg.PATTERN_GEOMETRY.PATTERN_RADIUS = 0.050f;   // 5 cm
+    spe_cfg.PATTERN_GEOMETRY.PATTERN_OFFSET = 0.020f;   // 2 cm
+
+    spe_cfg.PATTERN_GEOMETRY.P = {
+         0.0f,  -0.0199f, 0.0f,
+        -0.0199f, 0.0f, 0.0f,
+         0.0199f, 0.0f, 0.0f,
+         0.0f, 0.0199f, 0.0f,
+         0.0f, 0.0f, -0.020f
+    };
+
+    spe_cfg.PATTERN_GEOMETRY.P_PINV = {
+         -1.3801f, -50.266f, -2.7851f, 47.1105f, 0.0f,
+        -48.686f,  -3.3253f, 49.62f, -0.029935f, 0.0f,
+         0.0f, 0.0f, 0.0f, 0.0f, -109.529f
+    };
+
     // Algorithm selection + reprojection threshold
     //spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_INNER;
     spe_cfg.ALGO = vbn::AlgoType::ANALYTICAL_GENERIC;
-    spe_cfg.MAX_REPROJ_ERROR_PX = 600.0f;                 // from your config
+    spe_cfg.MAX_REPROJ_ERROR_PX = 6000.0f;                 // from your config
 
 
     // ---- MODULES ----
@@ -95,15 +116,17 @@ int main() {
     // Configure monitor
     mon_ctx.cfg.enable_server    = true;   // MJPEG HTTP
     mon_ctx.cfg.enable_snapshots = true;   // copy+annotate+JPEG
-    mon_ctx.cfg.enable_csv       = false;  
-    mon_ctx.cfg.testcase         = ground::Test::NONE;
-    // mon_ctx.cfg.log_n = 100;
-    // mon_ctx.cfg.log_every = 1;
-    // mon_ctx.cfg.out_dir = "../tools/data/tmp/vbn_monitor";
+    mon_ctx.cfg.enable_csv       = true;  
+    mon_ctx.cfg.enable_img       = false;
+    mon_ctx.cfg.testcase         = ground::Test::POSE_LOG;
+    mon_ctx.cfg.log_n = 500;
+    mon_ctx.cfg.log_every = 1;
+    mon_ctx.cfg.out_dir = "/home/vbn/RPOD-Software/tools/data/tmp/vbn_monitor";
     mon_ctx.cfg.port = 8080;
     mon_ctx.cfg.snapshot_period_ms = 200;
     mon_ctx.cfg.stream_fps = 10;
-
+    mon_ctx.cfg.jpeg_quality = 80;
+    
     // ---- TASKS ----
     Rtos::Task ImageCaptureTask;
     Rtos::Task VBNTask;

@@ -17,6 +17,7 @@ enum class Test : uint8_t {
     NONE = 0,
     RANGE_LOG,
     CENTROID_LOG,
+    POSE_LOG,
     //ADD MORE
 };
 
@@ -38,6 +39,7 @@ struct GroundMonitorConfig {
     bool enable_snapshots = false;
     bool enable_server = false;
     uint32_t snapshot_period_ms = 200; // request copies at this rate
+    bool enable_img = false ; // Saves images which it sends thorugh mjpeg as .raw, number is same as the log_n(no. of logs in csv)
 
     // MJPEG server
     int port = 8080;

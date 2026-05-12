@@ -261,7 +261,7 @@ static void annotate(cv::Mat& bgr, const msg::FeatureFrame& feat, const msg::Pos
         cv::circle(bgr, pt, 20, cv::Scalar(0,0,255), 2);
         cv::drawMarker(bgr, pt, cv::Scalar(0,255,0), cv::MARKER_CROSS, 50, 2);
         cv::putText(bgr, std::to_string(i), pt + cv::Point(5, -5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,255,0), 1);
+        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,255,0), 1);
     }
 
     int y = 28;
@@ -331,7 +331,7 @@ void TaskEntry(void* arg) {
     auto* ctx = static_cast<GroundMonitorCtx*>(arg);
     if (!ctx || (!ctx->feat_in && !ctx->pose_in)) return;
 
-    // Force snapshots if server enabled 
+    // Force snapshots if server enabled
     ctx->cfg.enable_snapshots = ctx->cfg.enable_server;
 
     std::cout << "[MONITOR] started\n";
@@ -368,6 +368,13 @@ void TaskEntry(void* arg) {
                 "k,t_us,blob_i,u_px,v_px,area,intensity\n"
             );
         }
+        if(ctx->cfg.testcase == Test::POSE_LOG){
+            csv = open_csv(
+                *ctx,
+                "pose_log.csv",
+                "k,t_us,q_0,q_1,q_2,q_3,tcp0,tcp1,tcp2,reproj_rms_px,roll,pitch,yaw,blob_i,u_px,v_px,area,intensity\n"
+            );
+        }
     }
 
     constexpr uint64_t PRINT_PERIOD_US = 1'000'000; // 1Hz Printing
@@ -384,6 +391,7 @@ void TaskEntry(void* arg) {
 
     uint32_t k = 0;
     uint32_t logged = 0;
+    uint32_t frames_saved = 0;  // counter for raw frame files
 
     while (true) {
         bool got_new_feat = false;
@@ -463,6 +471,56 @@ void TaskEntry(void* arg) {
                 }
                 k++;
             }
+            // ---------- POSE LOG -------------
+            else if (ctx->cfg.testcase == Test::POSE_LOG) {
+                if (got_new_pose && (k % ctx->cfg.log_every == 0) && last_pose.valid) {
+                            const double q_0 = last_pose.q_C_P[0];
+                            const double q_1 = last_pose.q_C_P[1];
+                    const double q_2 = last_pose.q_C_P[2];
+                    const double q_3 = last_pose.q_C_P[3];
+                    const double tcp0 = last_pose.t_CbyP[0];
+                    const double tcp1 = last_pose.t_CbyP[1];
+                    const double tcp2 = last_pose.t_CbyP[2];
+                    const double roll  = last_pose.roll  * RAD2DEG;
+                    const double pitch = last_pose.pitch * RAD2DEG;
+                    const double yaw   = last_pose.yaw   * RAD2DEG;
+                    const uint8_t n = last_feat.feat_count;
+                    //const double x = last_pose.range_m * std::cos(last_pose.el) * std::cos(last_pose.az);
+                    //const double y = last_pose.range_m * std::cos(last_pose.el) * std::sin(last_pose.az);
+                   // const double z = last_pose.range_m * std::sin(last_pose.el);
+
+                   for (uint8_t i = 0; i < n; ++i) {
+                        const msg::Feature& b = last_feat.feats[i];
+                        csv << logged << ","
+                            << last_pose.t_exp_end_us << ","
+                            << q_0 << ","
+                            << q_1 << ","
+                            << q_2 << ","
+                            << q_3 << ","
+                            << tcp0 << ","
+                            << tcp1 << ","
+                            << tcp2 << ","
+                            << last_pose.reproj_rms_px << ","
+                            << roll << ","
+                            << pitch << ","
+                            << yaw << "," 
+                            << int(i) << ","
+                            << b.u_px << ","
+                            << b.v_px << ","
+                            << b.area << ","
+                            << b.intensity << "\n";
+                   }
+
+                    logged++;
+                    if (logged == ctx->cfg.log_n) {
+                        csv.flush();
+                        csv.close();
+                        std::cout << "[MONITOR] Wrote pose_log.csv (" << ctx->cfg.log_n << " rows)\n";
+                    }
+                }
+                k++;
+            }
+
         }
 
         const uint64_t now = mono_us();
@@ -500,6 +558,18 @@ void TaskEntry(void* arg) {
 
                 mjpeg::update_latest(jpg, newest.t_us, newest.frame_id);
                 ctx->vbn->ReleaseCopied(newest);
+
+                // Save raw frame if CSV logging is enabled and limit not reached
+                if (ctx->cfg.enable_img && frames_saved < ctx->cfg.log_n) {
+                    std::string raw_filename = ctx->cfg.out_dir + "/" + std::to_string(frames_saved) + ".raw";
+                    std::ofstream raw_file(raw_filename, std::ios::binary);
+                    if (raw_file) {
+                        // Save raw 16-bit pixel data
+                        raw_file.write((const char*)newest.data, (size_t)newest.stride * newest.height);
+                        raw_file.close();
+                        frames_saved++;
+                    }
+                }
             }
         }
 
@@ -543,7 +613,7 @@ void TaskEntry(void* arg) {
                 std::cout << "[SPE] NONE\n";
             }
 
-            
+
             if (new_state) {
                 std::cout << "[RNAV] OK\n";
 
